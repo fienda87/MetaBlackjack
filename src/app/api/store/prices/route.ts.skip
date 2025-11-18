@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+
+// Supported cryptocurrencies with their CoinGecko IDs
+const CRYPTO_LIST = [
+  { symbol: 'BTC', name: 'Bitcoin', icon: '₿', coinGeckoId: 'bitcoin' },
+  { symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', coinGeckoId: 'ethereum' },
+  { symbol: 'USDT', name: 'Tether', icon: '₮', coinGeckoId: 'tether' },
+  { symbol: 'BNB', name: 'Binance Coin', icon: 'BNB', coinGeckoId: 'binancecoin' },
+  { symbol: 'SOL', name: 'Solana', icon: 'SOL', coinGeckoId: 'solana' },
+  { symbol: 'ADA', name: 'Cardano', icon: 'ADA', coinGeckoId: 'cardano' },
+  { symbol: 'DOT', name: 'Polkadot', icon: 'DOT', coinGeckoId: 'polkadot' },
+  { symbol: 'MATIC', name: 'Polygon', icon: 'MATIC', coinGeckoId: 'matic-network' }
+]
+
+// Fetch real prices from CoinGecko API
+async function fetchRealPrices() {
+  try {
+    const ids = CRYPTO_LIST.map(crypto => crypto.coinGeckoId).join(',')
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`,
+      {
+        headers: {
+          'User-Agent': 'MetaBlackJack-Store/1.0'
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`CoinGecko API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error('Error fetching real prices:', error)
+    return null
+  }
+}
+
+// Get GBC to USD rate (1 GBC = $0.01 fixed rate)
+const GBC_TO_USD_RATE = 0.01
+
+export async function GET() {
+  try {
+    // Try to get latest prices from database
+    const latestPrices = await db.cryptoPrice.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 8
+    })
+
+    // If no prices exist or they're older than 2 minutes, fetch new ones
+    const now = new Date()
+    const needNewPrices = latestPrices.length === 0 || 
+      (new Date(latestPrices[0]?.createdAt || 0).getTime() < now.getTime() - 120000)
+
+    let prices = latestPrices
+
+    if (needNewPrices) {
+      // Fetch real prices from CoinGecko
+      const realPrices = await fetchRealPrices()
+      
+      if (realPrices) {
+        // Process real prices
+        const newPrices = CRYPTO_LIST.map((crypto) => {
+          const priceData = realPrices[crypto.coinGeckoId]
+          
+          if (!priceData) {
+            // Fallback to cached or default price
+            const cachedPrice = latestPrices.find(p => p.currency === crypto.symbol)
+            return {
+              currency: crypto.symbol,
+              priceGBC: cachedPrice?.priceGBC || 100000, // Default fallback
+              priceUSD: cachedPrice?.priceUSD || 1000,
+              change24h: cachedPrice?.change24h || 0,
+              volume24h: cachedPrice?.volume24h || 0
+            }
+          }
+
+          const priceUSD = priceData.usd
+          const priceGBC = priceUSD / GBC_TO_USD_RATE
+          const change24h = priceData.usd_24h_change || 0
+          const volume24h = priceData.usd_24h_vol || 0
+
+          return {
+            currency: crypto.symbol,
+            priceGBC,
+            priceUSD,
+            change24h,
+            volume24h
+          }
+        })
+
+        // Save to database
+        await db.cryptoPrice.deleteMany() // Clear old prices
+        
+        for (const priceData of newPrices) {
+          await db.cryptoPrice.create({
+            data: priceData
+          })
+        }
+
+        prices = newPrices
+      } else {
+        // If API fails, use cached prices with timestamp update
+        console.log('Using cached prices due to API failure')
+      }
+    }
+
+    // Combine with crypto info
+    const cryptoData = CRYPTO_LIST.map(crypto => {
+      const priceData = prices.find(p => p.currency === crypto.symbol)
+      return {
+        ...crypto,
+        ...priceData,
+        priceGBC: priceData?.priceGBC || 0,
+        priceUSD: priceData?.priceUSD || 0,
+        change24h: priceData?.change24h || 0,
+        volume24h: priceData?.volume24h || 0
+      }
+    })
+
+    return NextResponse.json({ 
+      prices: cryptoData,
+      lastUpdated: prices[0]?.createdAt || new Date(),
+      source: needNewPrices && prices[0] ? 'live' : 'cached'
+    })
+  } catch (error) {
+    console.error('Error fetching crypto prices:', error)
+    return NextResponse.json({ error: 'Failed to fetch crypto prices' }, { status: 500 })
+  }
+}

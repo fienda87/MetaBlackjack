@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "wallet authentication post request",
+    "description": "Test the POST /api/auth/wallet endpoint to verify wallet address and signature authentication returns success with user and stats data."
+  },
+  {
+    "id": "TC002",
+    "title": "wallet authentication get request",
+    "description": "Test the GET /api/auth/wallet endpoint to retrieve the list of available mock wallets for testing."
+  },
+  {
+    "id": "TC003",
+    "title": "start new blackjack game",
+    "description": "Test the POST /api/game/play endpoint to start a new blackjack game with valid userId, betAmount, and moveType, and verify game state and user balance updates."
+  },
+  {
+    "id": "TC004",
+    "title": "perform blackjack game action",
+    "description": "Test the POST /api/game/action endpoint to perform valid game actions (hit, stand, double down, split, surrender, insurance) and verify updated game state and user balance."
+  },
+  {
+    "id": "TC005",
+    "title": "retrieve game history with filters",
+    "description": "Test the GET /api/history endpoint to retrieve paginated game history filtered by result types (win, lose, push, blackjack) for a specific user."
+  },
+  {
+    "id": "TC006",
+    "title": "get current user and update balance",
+    "description": "Test the GET /api/user endpoint to retrieve current user or create demo user, and POST /api/user to update user balance."
+  },
+  {
+    "id": "TC007",
+    "title": "get user by id and admin balance adjustment",
+    "description": "Test the GET /api/user/{id} endpoint to retrieve user details with transaction history and POST /api/user/{id} to perform admin balance adjustments."
+  },
+  {
+    "id": "TC008",
+    "title": "get all users list",
+    "description": "Test the GET /api/users endpoint to retrieve a list of all users."
+  },
+  {
+    "id": "TC009",
+    "title": "purchase store items",
+    "description": "Test the POST /api/store/purchase endpoint to purchase in-game items with valid userId, itemId, and quantity, and verify success or failure due to insufficient balance or invalid items."
+  },
+  {
+    "id": "TC010",
+    "title": "check api health status",
+    "description": "Test the GET /api/health endpoint to verify the API health status returns 'ok' with a timestamp."
+  }
+]

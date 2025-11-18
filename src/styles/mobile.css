@@ -1,0 +1,140 @@
+/* Mobile-First Improvements for BlackJack Game */
+
+/* Custom scrollbar for mobile */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(34, 197, 94, 0.3);
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 197, 94, 0.5);
+}
+
+/* Touch-friendly button sizes */
+@media (max-width: 640px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Better spacing for mobile */
+  .mobile-spacing {
+    padding: 0.5rem;
+  }
+  
+  /* Prevent zoom on input focus */
+  input, select, textarea {
+    font-size: 16px;
+  }
+  
+  /* Smooth scrolling for mobile */
+  html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Better card display on mobile */
+  .mobile-card {
+    transform: scale(0.9);
+  }
+  
+  /* Mobile game table optimizations */
+  .mobile-game-table {
+    padding: 1rem 0.5rem;
+  }
+  
+  /* Mobile betting controls */
+  .mobile-bet-controls {
+    gap: 0.75rem;
+  }
+  
+  /* Mobile action buttons */
+  .mobile-action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+  }
+  
+  .mobile-action-buttons button {
+    width: 100%;
+    min-height: 48px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+
+/* Haptic feedback simulation */
+@keyframes haptic-tap {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.98); }
+}
+
+.haptic-feedback:active {
+  animation: haptic-tap 0.1s ease-in-out;
+}
+
+/* Pull-to-refresh indicator */
+.pull-to-refresh {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, transparent, rgba(34, 197, 94, 0.1));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.pull-to-refresh.active {
+  opacity: 1;
+}
+
+/* Mobile performance optimizations */
+@media (max-width: 640px) {
+  /* Reduce animations on mobile for better performance */
+  .reduce-motion {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  /* Optimize images for mobile */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+  
+  /* Better text rendering */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Landscape mobile optimizations */
+@media (max-width: 896px) and (orientation: landscape) {
+  .landscape-optimizations {
+    padding: 0.25rem;
+  }
+  
+  .landscape-game-table {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Tablet optimizations */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .tablet-optimizations {
+    max-width: 768px;
+    margin: 0 auto;
+  }
+}

@@ -1,0 +1,227 @@
+{
+  "meta": {
+    "project": "BlackJack Game",
+    "date": "2025-11-14",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "A modern web-based BlackJack game platform featuring real-time gameplay, Web3 wallet authentication, game history tracking, an in-game store, and comprehensive user and admin management systems.",
+  "core_goals": [
+    "Deliver a seamless, engaging blackjack gameplay experience with real-time synchronization and AI dealer logic.",
+    "Ensure secure user authentication and balance management via crypto wallet integration.",
+    "Provide extensive user and game session tracking including history with filter and pagination capabilities.",
+    "Support an in-game store with multiple purchasable items to enhance player experience.",
+    "Offer comprehensive administrative controls for user management, balance adjustments, and game monitoring.",
+    "Maintain robust security measures including encrypted data handling and audit logging.",
+    "Ensure performance optimization and reliability with health monitoring and troubleshooting guidance."
+  ],
+  "key_features": [
+    "Core blackjack game engine supporting moves like HIT, STAND, DOUBLE, SPLIT, SURRENDER, INSURANCE with score calculation and game state management.",
+    "REST API endpoints for starting games, processing moves, and performing game actions.",
+    "Persistent game state management with CRUD operations backed by Prisma ORM and SQLite database.",
+    "Game history functionality with filtering, pagination, and virtualized list rendering for performance.",
+    "Crypto wallet authentication system supporting Web3 connections and session management with mock wallet support.",
+    "User management including CRUD, balance adjustments, and comprehensive statistics tracking.",
+    "Game session tracking with auto-expiry after inactivity and aggregation of session stats.",
+    "Financial transaction recording for bets, wins, losses, store purchases, and bonuses with balance tracking.",
+    "In-game store system for purchasing avatars, themes, power-ups with inventory and balance validation.",
+    "Health check API for monitoring system and database performance including query diagnostics.",
+    "Real-time game state synchronization and multiplayer updates using Socket.IO.",
+    "React UI components for game interface including cards, hands, action buttons, betting, and modals.",
+    "Administrative dashboard for managing users, balances, games, and system configs.",
+    "Security utilities comprising password hashing, data encryption, rate limiting, API key management, and audit logging.",
+    "Redux Toolkit-based state management with async API integration.",
+    "Performance monitoring tools for operation timing and rendering bottleneck identification."
+  ],
+  "user_flow_summary": [
+    "User connects crypto wallet to authenticate and create/manage their user profile.",
+    "User starts a new blackjack game via the UI triggering the Play API endpoint with bet amount.",
+    "Player performs game moves (HIT, STAND, DOUBLE, SPLIT, SURRENDER, INSURANCE) through the UI invoking corresponding API endpoints.",
+    "Real-time game state updates propagate to all connected clients instantly via Socket.IO.",
+    "User can view their game history with filters (date range, result type) and pagination controls.",
+    "Users access the in-game store to browse and purchase items, with balance deduction and inventory updates.",
+    "Admin users log into the admin panel to manage users, adjust balances, and monitor game statistics.",
+    "The system automatically manages game sessions and expires inactive sessions after 2 hours.",
+    "Health check API provides operational diagnostics accessible by internal tools or admin.",
+    "Performance and error monitoring enable quick troubleshooting and system reliability."
+  ],
+  "validation_criteria": [
+    "All supported game moves trigger correct state transitions with accurate score and dealer AI behaviors.",
+    "API endpoints respond with expected data structures and status codes for game play, actions, user operations, store transactions, and health checks.",
+    "Data persistence ensures all game states, user info, transactions, and purchases are consistently stored and retrievable.",
+    "Crypto wallet authentication securely verifies signature and maintains session integrity including mock wallet handling.",
+    "Game history filters and pagination function correctly with no performance degradation using virtualization techniques.",
+    "Store purchases validate inventory availability and user balance before completion, updating accordingly.",
+    "Admin panel allows authorized users to perform CRUD operations, balance adjustments, and view updated statistics.",
+    "Security features correctly encrypt sensitive data, hash passwords, and limit API usage to prevent abuse.",
+    "Real-time synchronization maintains consistent game states across multiple players with minimal latency.",
+    "System health metrics accurately report database connectivity, query performance, and response times.",
+    "React UI components render correctly with responsive design and handle all user interactions gracefully.",
+    "State management via Redux stores and updates application state reliably in response to actions and API responses.",
+    "Performance monitoring tools identify slow operations and help maintain application responsiveness under load.",
+    "Troubleshooting documentation addresses common errors with clear, actionable instructions to ensure smooth operation."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "TypeScript",
+      "Next.js 15.3.5",
+      "React",
+      "Prisma ORM",
+      "SQLite",
+      "Socket.IO",
+      "Redux Toolkit",
+      "TailwindCSS",
+      "Shadcn UI"
+    ],
+    "features": [
+      {
+        "name": "Game Engine",
+        "description": "Core blackjack game logic engine that processes moves (HIT, STAND, DOUBLE, SPLIT, SURRENDER, INSURANCE), calculates scores, determines winners, handles dealer AI, and manages game state transitions",
+        "files": [
+          "src/domain/usecases/GameEngine.ts",
+          "src/lib/game-logic.ts",
+          "src/domain/entities/Game.ts"
+        ]
+      },
+      {
+        "name": "Game API - Play Endpoint",
+        "description": "REST API endpoint to start new games and process game moves. Accepts userId, betAmount, and moveType. Returns updated game state with player/dealer hands, scores, and result",
+        "files": [
+          "src/app/api/game/play/route.ts"
+        ]
+      },
+      {
+        "name": "Game API - Action Endpoint",
+        "description": "REST API endpoint for performing game actions on existing games. Handles HIT, STAND, DOUBLE, SPLIT operations",
+        "files": [
+          "src/app/api/game/action/route.ts"
+        ]
+      },
+      {
+        "name": "Game Repository",
+        "description": "Data access layer for game persistence using Prisma. Handles CRUD operations, state mapping (BETTING/PLAYING/DEALER/FINISHED), result mapping (WIN/LOSE/PUSH/BLACKJACK), and move type mapping",
+        "files": [
+          "src/infrastructure/repositories/PrismaGameRepository.ts",
+          "src/domain/repositories/GameRepository.ts"
+        ]
+      },
+      {
+        "name": "Game History",
+        "description": "API and UI components for viewing game history with filters (date range, result type), pagination, and statistics. Includes optimized virtualized list rendering",
+        "files": [
+          "src/app/api/history/route.ts",
+          "src/components/GameHistory.tsx",
+          "src/components/OptimizedGameHistory.tsx"
+        ]
+      },
+      {
+        "name": "Wallet Authentication",
+        "description": "Crypto wallet authentication system supporting Web3 wallet connections. Handles wallet signature verification, user creation/login, and session management with mock wallets for testing",
+        "files": [
+          "src/app/api/auth/wallet/route.ts",
+          "src/components/WalletConnection.tsx"
+        ]
+      },
+      {
+        "name": "User Management",
+        "description": "User CRUD operations, balance management, admin functions for balance adjustments, user statistics tracking (total games, wins, losses, net profit)",
+        "files": [
+          "src/app/api/user/route.ts",
+          "src/app/api/user/[id]/route.ts",
+          "src/app/api/user/update/route.ts",
+          "src/app/api/users/route.ts"
+        ]
+      },
+      {
+        "name": "Game Session Management",
+        "description": "Tracks player sessions, aggregates stats (total games, total bet, total win, net profit), maintains session history with automatic expiration after 2 hours of inactivity",
+        "files": [
+          "src/app/api/game/play/route.ts",
+          "prisma/schema.prisma"
+        ]
+      },
+      {
+        "name": "Transaction System",
+        "description": "Records all financial transactions (bets, wins, losses, store purchases, bonuses) with balance tracking (before/after), transaction types, and metadata",
+        "files": [
+          "src/app/api/game/play/route.ts",
+          "src/app/api/store/purchase/route.ts",
+          "prisma/schema.prisma"
+        ]
+      },
+      {
+        "name": "Store System",
+        "description": "In-game store for purchasing items, avatars, themes, and power-ups. Handles inventory management, purchase validation, balance deduction",
+        "files": [
+          "src/app/api/store/purchase/route.ts",
+          "src/components/StoreView.tsx"
+        ]
+      },
+      {
+        "name": "Health Check API",
+        "description": "System health monitoring endpoint. Tests database connectivity, reports query metrics (count, duration, slow queries), provides response time diagnostics",
+        "files": [
+          "src/app/api/health/route.ts",
+          "src/lib/production-db.ts"
+        ]
+      },
+      {
+        "name": "Real-time Game Sync",
+        "description": "Socket.IO integration for real-time game updates, multiplayer synchronization, live notifications, and instant state updates across connected clients",
+        "files": [
+          "src/lib/socket.ts",
+          "server.ts"
+        ]
+      },
+      {
+        "name": "Game UI Components",
+        "description": "React components for blackjack gameplay: card rendering, dealer/player hands display, action buttons (HIT/STAND/DOUBLE/SPLIT/SURRENDER), betting interface, score calculation, game result modal",
+        "files": [
+          "src/components/GameTable.tsx",
+          "src/components/OptimizedGameTable.tsx",
+          "src/components/CardDeck.tsx",
+          "src/components/GameResultModal.tsx"
+        ]
+      },
+      {
+        "name": "Admin Panel",
+        "description": "Administrative dashboard for user management, balance adjustments, game monitoring, statistics viewing, and system configuration",
+        "files": [
+          "src/components/AdminPanel.tsx"
+        ]
+      },
+      {
+        "name": "Security Layer",
+        "description": "Security utilities including password hashing (bcrypt), data encryption (AES-256-GCM), rate limiting, API key management, audit logging, and secure token generation",
+        "files": [
+          "src/lib/security.ts",
+          "src/lib/db-security.ts"
+        ]
+      },
+      {
+        "name": "Database Schema",
+        "description": "Prisma schema defining all data models: User, Game, GameSession, Transaction, StoreItem, Purchase with relationships, indexes, and field validations",
+        "files": [
+          "prisma/schema.prisma"
+        ]
+      },
+      {
+        "name": "State Management",
+        "description": "Redux store with slices for game state, user state, wallet connection, UI settings, and async thunks for API calls",
+        "files": [
+          "src/store/gameSlice.ts",
+          "src/store/userSlice.ts",
+          "src/store/walletSlice.ts",
+          "src/store/store.ts"
+        ]
+      },
+      {
+        "name": "Performance Monitoring",
+        "description": "Performance tracking utilities for monitoring operation timing, identifying bottlenecks, and optimizing React component rendering",
+        "files": [
+          "src/shared/utils/performance.ts",
+          "src/hooks/useVirtualization.ts"
+        ]
+      }
+    ]
+  }
+}

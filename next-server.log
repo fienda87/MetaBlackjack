@@ -1,0 +1,37 @@
+   ▲ Next.js 15.3.5
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.13:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 22.3s
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 15.8s (367 modules)
+prisma:query SELECT 1 as health_check
+prisma:query SELECT `main`.`users`.`id` FROM `main`.`users` WHERE 1=1 LIMIT ? OFFSET ?
+ GET /api/health 200 in 15322ms
+ ○ Compiling / ...
+ ✓ Compiled / in 20.3s (1275 modules)
+ GET / 200 in 29277ms
+ ○ Compiling /api/game/play ...
+ ✓ Compiled /api/game/play in 16.5s (1294 modules)
+ POST /api/game/play 400 in 17201ms
+ ✓ Compiled in 2.8s (562 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /api/user in 29.4s (1614 modules)
+ ⨯ A conflicting public file and page file was found for path /favicon.ico https://nextjs.org/docs/messages/conflicting-public-file-page
+ GET /api/auth/wallet 200 in 30866ms
+prisma:info Starting a sqlite pool with 5 connections.
+ GET /favicon.ico 500 in 33633ms
+ GET / 200 in 15799ms
+ GET /api/user 200 in 29822ms
+prisma:query SELECT `main`.`users`.`id`, `main`.`users`.`walletAddress`, `main`.`users`.`username`, `main`.`users`.`email`, `main`.`users`.`passwordHash`, `main`.`users`.`balance`, `main`.`users`.`startingBalance`, `main`.`users`.`totalDeposited`, `main`.`users`.`totalWithdrawn`, `main`.`users`.`isActive`, `main`.`users`.`lastLoginAt`, `main`.`users`.`createdAt`, `main`.`users`.`updatedAt`, `main`.`users`.`apiKey`, `main`.`users`.`apiSecret`, `main`.`users`.`twoFactorSecret`, `main`.`users`.`failedLoginAttempts`, `main`.`users`.`lockedUntil`, `main`.`users`.`passwordResetToken`, `main`.`users`.`passwordResetExpires`, `main`.`users`.`emailVerificationToken`, `main`.`users`.`emailVerified` FROM `main`.`users` WHERE 1=1 LIMIT ? OFFSET ?
+ GET / 200 in 56ms
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 11.7s (1614 modules)
+ ⨯ A conflicting public file and page file was found for path /favicon.ico https://nextjs.org/docs/messages/conflicting-public-file-page
+ GET /favicon.ico 500 in 10805ms
+prisma:query SELECT 1
+prisma:query SELECT 1 as health_check
+prisma:query SELECT `main`.`users`.`id` FROM `main`.`users` WHERE 1=1 LIMIT ? OFFSET ?
+[?25h

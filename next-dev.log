@@ -1,0 +1,22 @@
+   ▲ Next.js 15.3.5
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.13:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 18.2s
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 51s (367 modules)
+prisma:query SELECT 1 as health_check
+prisma:query SELECT `main`.`users`.`id` FROM `main`.`users` WHERE 1=1 LIMIT ? OFFSET ?
+ GET /api/health 200 in 59142ms
+ ○ Compiling /api/auth/wallet ...
+ ✓ Compiled /api/auth/wallet in 7.8s (366 modules)
+ POST /api/auth/wallet 400 in 9239ms
+prisma:info Starting a sqlite pool with 5 connections.
+prisma:query SELECT `main`.`users`.`id`, `main`.`users`.`walletAddress`, `main`.`users`.`username`, `main`.`users`.`email`, `main`.`users`.`passwordHash`, `main`.`users`.`balance`, `main`.`users`.`startingBalance`, `main`.`users`.`totalDeposited`, `main`.`users`.`totalWithdrawn`, `main`.`users`.`isActive`, `main`.`users`.`lastLoginAt`, `main`.`users`.`createdAt`, `main`.`users`.`updatedAt`, `main`.`users`.`apiKey`, `main`.`users`.`apiSecret`, `main`.`users`.`twoFactorSecret`, `main`.`users`.`failedLoginAttempts`, `main`.`users`.`lockedUntil`, `main`.`users`.`passwordResetToken`, `main`.`users`.`passwordResetExpires`, `main`.`users`.`emailVerificationToken`, `main`.`users`.`emailVerified` FROM `main`.`users` WHERE (`main`.`users`.`walletAddress` = ? AND 1=1) LIMIT ? OFFSET ?
+prisma:query INSERT INTO `main`.`users` (`id`, `walletAddress`, `username`, `balance`, `startingBalance`, `totalDeposited`, `totalWithdrawn`, `isActive`, `lastLoginAt`, `createdAt`, `updatedAt`, `failedLoginAttempts`, `emailVerified`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING `id` AS `id`, `walletAddress` AS `walletAddress`, `username` AS `username`, `email` AS `email`, `passwordHash` AS `passwordHash`, `balance` AS `balance`, `startingBalance` AS `startingBalance`, `totalDeposited` AS `totalDeposited`, `totalWithdrawn` AS `totalWithdrawn`, `isActive` AS `isActive`, `lastLoginAt` AS `lastLoginAt`, `createdAt` AS `createdAt`, `updatedAt` AS `updatedAt`, `apiKey` AS `apiKey`, `apiSecret` AS `apiSecret`, `twoFactorSecret` AS `twoFactorSecret`, `failedLoginAttempts` AS `failedLoginAttempts`, `lockedUntil` AS `lockedUntil`, `passwordResetToken` AS `passwordResetToken`, `passwordResetExpires` AS `passwordResetExpires`, `emailVerificationToken` AS `emailVerificationToken`, `emailVerified` AS `emailVerified`
+prisma:query INSERT INTO `main`.`transactions` (`id`, `userId`, `type`, `amount`, `description`, `balanceBefore`, `balanceAfter`, `status`, `metadata`, `createdAt`, `updatedAt`) VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING `id` AS `id`, `userId` AS `userId`, `type` AS `type`, `amount` AS `amount`, `description` AS `description`, `referenceId` AS `referenceId`, `balanceBefore` AS `balanceBefore`, `balanceAfter` AS `balanceAfter`, `status` AS `status`, `metadata` AS `metadata`, `createdAt` AS `createdAt`, `updatedAt` AS `updatedAt`
+prisma:query SELECT COUNT(`main`.`games`.`result`) AS `_count$result`, SUM(`main`.`games`.`betAmount`) AS `_sum$betAmount`, SUM(`main`.`games`.`netProfit`) AS `_sum$netProfit`, `main`.`games`.`result` FROM `main`.`games` WHERE `main`.`games`.`playerId` = ? GROUP BY `main`.`games`.`result` LIMIT ? OFFSET ?
+prisma:query SELECT `main`.`games`.`id`, `main`.`games`.`betAmount`, `main`.`games`.`result`, `main`.`games`.`netProfit`, `main`.`games`.`createdAt`, `main`.`games`.`endedAt` FROM `main`.`games` WHERE `main`.`games`.`playerId` = ? ORDER BY `main`.`games`.`createdAt` DESC LIMIT ? OFFSET ?
+ POST /api/auth/wallet 200 in 1214ms

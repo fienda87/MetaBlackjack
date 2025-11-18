@@ -1,0 +1,260 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  walletAddress String    @unique  // Primary key for crypto wallet login
+  username      String?   @unique  // Optional username
+  email         String?   @unique  // Optional email
+  passwordHash  String?   // Optional password for non-wallet login
+  balance       Float     @default(10.0)  // Starting GBC balance
+  startingBalance Float   @default(10.0)  // Track original starting balance
+  totalDeposited Float    @default(0.0)     // Total amount deposited
+  totalWithdrawn Float    @default(0.0)     // Total amount withdrawn
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Security fields
+  apiKey        String?   @unique  // Encrypted API key
+  apiSecret     String?   // Encrypted API secret
+  twoFactorSecret String? // Encrypted 2FA secret
+  failedLoginAttempts Int @default(0)
+  lockedUntil   DateTime?
+  passwordResetToken String?
+  passwordResetExpires DateTime?
+  emailVerificationToken String?
+  emailVerified  Boolean   @default(false)
+  
+  // Relations
+  games         Game[]
+  sessions      GameSession[]
+  transactions  Transaction[]
+  wallets       Wallet[]
+  
+  @@map("users")
+}
+
+model Game {
+  id            String    @id @default(cuid())
+  playerId      String
+  betAmount     Float
+  insuranceBet  Float     @default(0.0)
+  currentBet    Float
+  state         GameState @default(BETTING)
+  
+  // Game state as JSON
+  playerHand    Json      // Hand object
+  dealerHand    Json      // Hand object
+  splitHands    Json?     // Array of split hands (if any)
+  deck          Json      // Card array
+  gameStats     Json      // GameStats object
+  
+  // Result fields (filled when game ends)
+  result        GameResult?
+  winAmount     Float?
+  insuranceWin  Float?
+  netProfit     Float?
+  
+  // Game flags
+  hasSplit      Boolean   @default(false)
+  hasSurrendered Boolean  @default(false)
+  hasInsurance  Boolean   @default(false)
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  endedAt       DateTime?
+  
+  // Relations
+  player        User      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sessionId     String?
+  session       GameSession? @relation(fields: [sessionId], references: [id])
+  moves         GameMove[]
+  
+  // Performance indexes
+  @@index([playerId, state]) // Fast lookup for active player games
+  @@index([playerId, createdAt]) // Fast history queries
+  @@index([sessionId]) // Fast session lookups
+  @@map("games")
+}
+
+model GameSession {
+  id            String    @id @default(cuid())
+  playerId      String
+  startTime     DateTime  @default(now())
+  endTime       DateTime?
+  
+  // Session statistics
+  totalGames    Int       @default(0)
+  totalBet      Float     @default(0.0)
+  totalWin      Float     @default(0.0)
+  netProfit     Float     @default(0.0)
+  
+  // Session state as JSON
+  stats         Json      // SessionStats object
+  
+  // Relations
+  player        User      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  games         Game[]
+  
+  // Performance indexes
+  @@index([playerId, endTime]) // Fast active session lookup
+  @@index([playerId, startTime]) // Fast session history
+  @@map("game_sessions")
+}
+
+model GameMove {
+  id            String    @id @default(cuid())
+  gameId        String
+  moveType      MoveType
+  payload       Json?     // Additional move data
+  
+  // Move metadata
+  timestamp     DateTime  @default(now())
+  processingTimeMs Int?   // Server processing time
+  
+  // Relations
+  game          Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  
+  @@map("game_moves")
+}
+
+model SystemConfig {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  value         Json
+  description   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@map("system_config")
+}
+
+model AuditLog {
+  id            String    @id @default(cuid())
+  userId        String?
+  action        String
+  resource      String
+  resourceId    String?
+  oldValues     Json?
+  newValues     Json?
+  ipAddress     String?
+  userAgent     String?
+  timestamp     DateTime  @default(now())
+  
+  @@map("audit_logs")
+}
+
+model Transaction {
+  id            String    @id @default(cuid())
+  userId        String
+  type          TransactionType
+  amount        Float
+  description   String?
+  referenceId   String?   // Reference to game ID, deposit ID, etc
+  balanceBefore Float     // Balance before transaction
+  balanceAfter  Float     // Balance after transaction
+  status        TransactionStatus @default(PENDING)
+  metadata      Json?     // Additional transaction data
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("transactions")
+}
+
+model CryptoPrice {
+  id            String    @id @default(cuid())
+  currency      String    // BTC, ETH, etc.
+  priceGBC      Float     // Price in GBC
+  priceUSD      Float     // Price in USD
+  change24h     Float     @default(0)  // 24 hour change percentage
+  volume24h     Float     @default(0)  // 24 hour volume
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@map("crypto_prices")
+}
+
+model Wallet {
+  id            String    @id @default(cuid())
+  userId        String
+  currency      String    // BTC, ETH, etc.
+  balance       Float     @default(0)
+  address       String?   // Wallet address
+  encryptedPrivateKey String? // Encrypted private key for security
+  type          String?   // Wallet type (hot, cold, etc.)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, currency])
+  @@map("wallets")
+}
+
+// Enums
+enum GameState {
+  BETTING
+  PLAYING
+  DEALER
+  ENDED
+  INSURANCE
+  SPLIT_PLAYING  // Playing after split
+  SURRENDERED
+}
+
+enum GameResult {
+  WIN
+  LOSE
+  PUSH
+  BLACKJACK
+  SURRENDER
+  SPLIT_WIN
+  SPLIT_LOSE
+  SPLIT_PUSH
+}
+
+enum MoveType {
+  HIT
+  STAND
+  DOUBLE_DOWN
+  DEAL
+  INSURANCE_ACCEPT
+  INSURANCE_DECLINE
+  SPLIT
+  SURRENDER
+}
+
+enum TransactionType {
+  SIGNUP_BONUS
+  DEPOSIT
+  WITHDRAWAL
+  GAME_WIN
+  GAME_LOSS
+  GAME_BET
+  ADMIN_ADJUSTMENT
+  REFERRAL_BONUS
+  DAILY_BONUS
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}

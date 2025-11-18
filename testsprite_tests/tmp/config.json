@@ -1,0 +1,16 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "diff",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "ippll",
+    "projectPath": "c:\\Users\\acerr\\Pictures\\ippll",
+    "testIds": [],
+    "additionalInstruction": "Focus testing on Game Engine, Game Actions (HIT/STAND/DOUBLE/SPLIT), Game API endpoints (/api/game/play, /api/game/action), and Game History features. Test all game state transitions, score calculations, win/lose/push conditions, and edge cases like blackjack, bust, insurance, and surrender.",
+    "envs": {
+      "API_KEY": "sk-user-pIUIyFQZUJZOcbUnRwVXi0EG8xEQA8WWjmhI8GZw5VHkc0uWn_iN8DdcQRWj4W_jNXwot0nYkCkrC1X2FS2eyuKP6UMB18ITC18HvbQZmZgPutm98-NnX-aP8JX6Runa7HM"
+    }
+  }
+}
