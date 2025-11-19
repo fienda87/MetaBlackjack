@@ -35,13 +35,17 @@ export const useSocket = (playerId: string, initialBalance: number) => {
   const [validationResult, setValidationResult] = useState<any>(null);
 
   useEffect(() => {
-    const socketInstance = io({
+    // Connect to Socket.IO server with proper URL
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+    
+    const socketInstance = io(socketUrl, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
-      timeout: 10000
+      timeout: 10000,
+      autoConnect: true
     });
     
     socketInstance.on('connect', () => {
@@ -152,7 +156,72 @@ export const useSocket = (playerId: string, initialBalance: number) => {
     }
   };
 
+  // Real-time game action (NEW - FAST!)
+  const performGameAction = (
+    gameId: string,
+    action: 'hit' | 'stand' | 'double_down' | 'split' | 'insurance' | 'surrender',
+    payload?: any
+  ): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      console.log(`[CLIENT] performGameAction called:`, { gameId, action, playerId, connected });
+      
+      if (!socket) {
+        console.error('[CLIENT] Socket instance is null');
+        reject(new Error('Socket not initialized'));
+        return;
+      }
+      
+      if (!connected) {
+        console.error('[CLIENT] Socket not connected');
+        reject(new Error('Socket not connected'));
+        return;
+      }
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        console.error('[CLIENT] Game action timeout after 10s');
+        reject(new Error('Action timeout'));
+      }, 10000);
+
+      // Listen for response
+      const handleUpdate = (data: any) => {
+        console.log('[CLIENT] Received game:updated', data);
+        clearTimeout(timeout);
+        socket.off('game:updated', handleUpdate);
+        socket.off('game:error', handleError);
+        resolve(data);
+      };
+
+      const handleError = (error: any) => {
+        console.error('[CLIENT] Received game:error', error);
+        clearTimeout(timeout);
+        socket.off('game:updated', handleUpdate);
+        socket.off('game:error', handleError);
+        
+        // Create proper Error object with details
+        const errorObj = new Error(
+          error?.error || error?.message || 'Game action failed'
+        );
+        (errorObj as any).details = error;
+        reject(errorObj);
+      };
+
+      socket.once('game:updated', handleUpdate);
+      socket.once('game:error', handleError);
+
+      // Emit action
+      console.log('[CLIENT] Emitting game:action to server');
+      socket.emit('game:action', {
+        gameId,
+        action,
+        userId: playerId,
+        payload
+      });
+    });
+  };
+
   return {
+    socket,
     connected,
     balance,
     lastUpdate,
@@ -162,6 +231,7 @@ export const useSocket = (playerId: string, initialBalance: number) => {
     getCurrentBalance,
     saveGameState,
     restoreGameState,
-    validateGame
+    validateGame,
+    performGameAction // NEW - Use this for game actions!
   };
 };

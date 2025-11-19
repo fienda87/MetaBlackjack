@@ -1,7 +1,0 @@
-{
-  "name": "seed-database",
-  "description": "Seed database with initial data",
-  "scripts": {
-    "seed": "node scripts/seed-database.js"
-  }
-}

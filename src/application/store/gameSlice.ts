@@ -122,6 +122,29 @@ const gameSlice = createSlice({
     resetGame: (state) => {
       state.currentGame = null
       state.error = null
+    },
+    
+    // NEW: Handle WebSocket actions loading state
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.isLoading = action.payload
+    },
+    
+    // NEW: Update game from WebSocket response
+    updateFromSocket: (state, action: PayloadAction<any>) => {
+      state.isLoading = false
+      if (action.payload?.game) {
+        console.log('[REDUX] Updating game from WebSocket:', {
+          playerHandCards: action.payload.game.playerHand?.cards?.length,
+          dealerHandCards: action.payload.game.dealerHand?.cards?.length,
+          gameState: action.payload.game.state,
+          playerCards: action.payload.game.playerHand?.cards,
+          dealerCards: action.payload.game.dealerHand?.cards
+        })
+        state.currentGame = action.payload.game
+      }
+      if (action.payload?.userBalance !== undefined) {
+        state.balance = action.payload.userBalance
+      }
     }
   },
   
@@ -183,5 +206,5 @@ const gameSlice = createSlice({
   }
 })
 
-export const { clearError, setLocalBalance, addToHistory, resetGame } = gameSlice.actions
+export const { clearError, setLocalBalance, addToHistory, resetGame, setLoading, updateFromSocket } = gameSlice.actions
 export default gameSlice.reducer

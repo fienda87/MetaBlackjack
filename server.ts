@@ -1,5 +1,6 @@
-// server.ts - Next.js Standalone + Socket.IO
+// server.ts - Next.js Standalone + Socket.IO + Redis
 import { setupSocket } from './src/lib/socket';
+import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';
@@ -45,11 +46,26 @@ async function createCustomServer() {
 
     setupSocket(io);
 
-    // Start the server
-    server.listen(currentPort, hostname, () => {
+    // Start the server first
+    server.listen(currentPort, hostname, async () => {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
       console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/socket.io`);
       console.log(`> Environment: ${dev ? 'development' : 'production'}`);
+      
+      // Try to initialize Redis after server is up (non-blocking)
+      try {
+        const redis = await initRedis();
+        if (redis && isRedisConnected()) {
+          const stats = await getCacheStats();
+          console.log(`> Redis: ✅ Connected (${stats.totalKeys} keys, ${stats.memory || 'N/A'})`);
+          console.log(`> Cache: Hit rate ${stats.hitRate}% (target: >80%)`);
+        } else {
+          console.log(`> Redis: ⚠️  Not available (using in-memory cache)`);
+          console.log(`> Cache: Install Redis for better performance (optional)`);
+        }
+      } catch {
+        console.log(`> Redis: ⚠️  Not available (using in-memory cache)`);
+      }
     });
 
   } catch (err) {

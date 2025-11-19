@@ -6,6 +6,7 @@ import Navigation from '@/components/Navigation'
 import GameTable from '@/components/GameTable'
 import WalletConnection from '@/components/WalletConnection'
 import PullToRefresh from '@/components/PullToRefresh'
+import AudioControls from '@/components/AudioControls'
 import { 
   SuspenseGameHistory, 
   SuspenseRulesGuide, 
@@ -77,6 +78,9 @@ export default function Home() {
           {renderCurrentView()}
         </PullToRefresh>
       </main>
+      
+      {/* Audio Controls - Always visible */}
+      {isConnected && <AudioControls />}
     </div>
   )
 }

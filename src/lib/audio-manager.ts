@@ -1,3 +1,5 @@
+import { Howl, Howler } from 'howler'
+
 export interface AudioSettings {
   masterVolume: number
   musicVolume: number
@@ -6,15 +8,19 @@ export interface AudioSettings {
   sfxEnabled: boolean
 }
 
-// Mock audio manager for development - no external dependencies
+// Real audio manager with Howler.js
 class AudioManager {
   private settings: AudioSettings = {
     masterVolume: 0.7,
     musicVolume: 0.5,
     sfxVolume: 0.8,
-    musicEnabled: true,
+    musicEnabled: false, // Start disabled
     sfxEnabled: true
   }
+
+  private sounds: Map<string, Howl> = new Map()
+  private backgroundMusic: Howl | null = null
+  private isInitialized = false
 
   constructor() {
     this.loadSettings()
@@ -35,9 +41,58 @@ class AudioManager {
     }
   }
 
-  // Sound Effects Methods - No-op for now
+  // Initialize audio system
+  private async initialize() {
+    if (this.isInitialized || typeof window === 'undefined') return
+    
+    try {
+      // Set global volume
+      Howler.volume(this.settings.masterVolume)
+
+      // Preload all sound effects
+      const sfxFiles = [
+        'button-click', 'card-deal', 'card-flip', 'chip-place',
+        'win', 'lose', 'blackjack', 'push', 'bust'
+      ]
+
+      sfxFiles.forEach(name => {
+        this.sounds.set(name, new Howl({
+          src: [`/audio/sfx/${name}.mp3`],
+          volume: this.settings.sfxVolume,
+          preload: true
+        }))
+      })
+
+      // Preload background music
+      this.backgroundMusic = new Howl({
+        src: ['/audio/music/background-music.mp3'],
+        volume: this.settings.musicVolume,
+        loop: true,
+        preload: true
+      })
+
+      this.isInitialized = true
+      console.log('[Audio] System initialized successfully')
+    } catch (error) {
+      console.warn('[Audio] Failed to initialize:', error)
+    }
+  }
+
+  // Sound Effects Methods
   playSound(soundName: string) {
-    console.log(`[Audio] Playing sound: ${soundName}`)
+    if (!this.settings.sfxEnabled) return
+    
+    if (!this.isInitialized) {
+      this.initialize()
+    }
+
+    const sound = this.sounds.get(soundName)
+    if (sound) {
+      sound.volume(this.settings.sfxVolume * this.settings.masterVolume)
+      sound.play()
+    } else {
+      console.warn(`[Audio] Sound not found: ${soundName}`)
+    }
   }
 
   playButtonSound() {
@@ -76,27 +131,73 @@ class AudioManager {
     this.playSound('bust')
   }
 
-  // Background Music Methods - No-op for now
+  // Background Music Methods
   playBackgroundMusic() {
-    console.log('[Audio] Playing background music')
+    if (!this.settings.musicEnabled) return
+    
+    if (!this.isInitialized) {
+      this.initialize()
+    }
+
+    if (this.backgroundMusic && !this.backgroundMusic.playing()) {
+      this.backgroundMusic.volume(this.settings.musicVolume * this.settings.masterVolume)
+      this.backgroundMusic.play()
+      console.log('[Audio] Background music started')
+    }
   }
 
   stopBackgroundMusic() {
-    console.log('[Audio] Stopping background music')
+    if (this.backgroundMusic) {
+      this.backgroundMusic.stop()
+      console.log('[Audio] Background music stopped')
+    }
   }
 
   pauseBackgroundMusic() {
-    console.log('[Audio] Pausing background music')
+    if (this.backgroundMusic && this.backgroundMusic.playing()) {
+      this.backgroundMusic.pause()
+      console.log('[Audio] Background music paused')
+    }
   }
 
   resumeBackgroundMusic() {
-    console.log('[Audio] Resuming background music')
+    if (this.settings.musicEnabled && this.backgroundMusic && !this.backgroundMusic.playing()) {
+      this.backgroundMusic.play()
+      console.log('[Audio] Background music resumed')
+    }
   }
 
   // Settings Methods
   updateSettings(newSettings: Partial<AudioSettings>) {
     this.settings = { ...this.settings, ...newSettings }
     this.saveSettings()
+
+    // Update global volume
+    if (newSettings.masterVolume !== undefined) {
+      Howler.volume(this.settings.masterVolume)
+    }
+
+    // Update music volume
+    if ((newSettings.musicVolume !== undefined || newSettings.masterVolume !== undefined) && this.backgroundMusic) {
+      this.backgroundMusic.volume(this.settings.musicVolume * this.settings.masterVolume)
+    }
+
+    // Update SFX volume
+    if (newSettings.sfxVolume !== undefined || newSettings.masterVolume !== undefined) {
+      this.sounds.forEach(sound => {
+        sound.volume(this.settings.sfxVolume * this.settings.masterVolume)
+      })
+    }
+
+    // Handle music enable/disable
+    if (newSettings.musicEnabled !== undefined) {
+      if (newSettings.musicEnabled) {
+        this.playBackgroundMusic()
+      } else {
+        this.stopBackgroundMusic()
+      }
+    }
+
     console.log('[Audio] Settings updated:', this.settings)
   }
 
@@ -106,15 +207,22 @@ class AudioManager {
 
   // Utility Methods
   isBackgroundMusicPlaying(): boolean {
-    return false
+    return this.backgroundMusic?.playing() || false
   }
 
   getBackgroundMusicPosition(): number {
-    return 0
+    return this.backgroundMusic?.seek() as number || 0
   }
 
   setBackgroundMusicPosition(position: number) {
-    // No-op
+    if (this.backgroundMusic) {
+      this.backgroundMusic.seek(position)
+    }
+  }
+
+  // Force initialization (call on user interaction)
+  forceInitialize() {
+    this.initialize()
   }
 
   // Test method to check if audio files exist

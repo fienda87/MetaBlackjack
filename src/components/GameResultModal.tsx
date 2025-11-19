@@ -50,8 +50,15 @@ export default function GameResultModal({
   useEffect(() => {
     if (isOpen) {
       // Sound is already played in the game logic, but we can add additional effects here if needed
+      console.log('[GameResultModal] Opened with data:', {
+        playerCardCount: playerHand.cards?.length,
+        dealerCardCount: dealerHand.cards?.length,
+        playerCards: playerHand.cards,
+        dealerCards: dealerHand.cards,
+        result
+      })
     }
-  }, [isOpen])
+  }, [isOpen, playerHand, dealerHand, result])
 
   if (!isOpen) return null
 
@@ -190,7 +197,7 @@ export default function GameResultModal({
           <div className="bg-black/30 rounded-lg p-2 mb-3">
             <div className="flex justify-between items-center mb-1">
               <span className="text-green-300 text-xs">Bet Amount:</span>
-              <span className="text-green-400 font-semibold text-sm">{betAmount} GBC</span>
+              <span className="text-green-400 font-semibold text-sm">{formatGBC(betAmount)}</span>
             </div>
             
             {/* Bonus Details */}
@@ -211,24 +218,43 @@ export default function GameResultModal({
               </div>
             )}
             
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-green-300 text-xs">Game Result:</span>
-              <span className={`font-bold text-sm ${getResultColor(result)}`}>
-                {result === 'push' ? formatGBC(betAmount) : formatGBC(winAmount - betAmount)}
-              </span>
-            </div>
+            {/* Win/Loss breakdown */}
+            {result !== 'push' && (
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-green-300 text-xs">
+                  {result === 'lose' ? 'Loss:' : result === 'blackjack' ? 'Blackjack Bonus (3:2):' : 'Win Bonus (1:1):'}
+                </span>
+                <span className={`font-bold text-sm ${result === 'lose' ? 'text-red-400' : 'text-green-400'}`}>
+                  {result === 'lose' ? '-' : '+'}{formatGBC(result === 'lose' ? betAmount : winAmount - betAmount)}
+                </span>
+              </div>
+            )}
+            
             {insuranceWin > 0 && (
               <div className="flex justify-between items-center mb-1">
-                <span className="text-blue-300 text-xs">Insurance Win:</span>
+                <span className="text-blue-300 text-xs">Insurance Win (2:1):</span>
                 <span className="text-blue-400 font-bold text-sm">
                   +{formatGBC(insuranceWin)}
                 </span>
               </div>
             )}
+            
             <div className="flex justify-between items-center pt-1 border-t border-green-800/30">
-              <span className="text-green-300 font-semibold text-xs">Total:</span>
-              <span className={`font-bold text-sm ${getResultColor(result)}`}>
-                {formatGBC((result === 'push' ? betAmount : winAmount - betAmount) + insuranceWin)}
+              <span className="text-green-300 font-semibold text-xs">Total Return:</span>
+              <span className={`font-bold text-lg ${getResultColor(result)}`}>
+                {formatGBC((result === 'lose' ? 0 : result === 'push' ? betAmount : winAmount) + insuranceWin)}
+              </span>
+            </div>
+            
+            {/* Net Profit/Loss */}
+            <div className="flex justify-between items-center mt-1 pt-1 border-t border-green-800/20">
+              <span className="text-gray-400 text-xs">Net {result === 'lose' ? 'Loss' : 'Profit'}:</span>
+              <span className={`font-bold text-sm ${result === 'lose' ? 'text-red-400' : result === 'push' ? 'text-yellow-400' : 'text-green-400'}`}>
+                {result === 'lose' ? '-' : '+'}{formatGBC(
+                  result === 'lose' ? betAmount : 
+                  result === 'push' ? 0 : 
+                  (winAmount - betAmount) + insuranceWin
+                )}
               </span>
             </div>
           </div>

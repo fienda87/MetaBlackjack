@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+import { 
+  cacheGet, 
+  cacheSet, 
+  isRedisConnected,
+  CACHE_KEYS,
+  CACHE_TTL
+} from '@/lib/redis'
+
 export async function GET(request: NextRequest) {
   try {
     console.log('🔍 History API called')
@@ -19,6 +27,18 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`👤 Fetching history for user: ${userId}, filter: ${resultFilter}`)
+    
+    // Try Redis cache first
+    const cacheKey = `${CACHE_KEYS.HISTORY}${userId}:${page}:${limit}:${resultFilter}`
+    
+    if (isRedisConnected()) {
+      const cachedData = await cacheGet<any>(cacheKey)
+      if (cachedData) {
+        console.log('✅ History cache HIT (Redis)')
+        return NextResponse.json(cachedData)
+      }
+      console.log('❌ History cache MISS (Redis)')
+    }
     
     // Get user
     const user = await db.user.findUnique({
@@ -136,7 +156,7 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ History API success')
 
-    return NextResponse.json({ 
+    const responseData = { 
       games: formattedGames,
       sessions: formattedSessions,
       overallStats,
@@ -146,7 +166,15 @@ export async function GET(request: NextRequest) {
         total: totalCount,
         totalPages: Math.ceil(totalCount / limit)
       }
-    })
+    }
+    
+    // Cache the response in Redis (2 minutes TTL)
+    if (isRedisConnected()) {
+      await cacheSet(cacheKey, responseData, CACHE_TTL.HISTORY)
+      console.log('✅ History cached in Redis')
+    }
+
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('❌ Error fetching game history:', error)
     return NextResponse.json({ 
