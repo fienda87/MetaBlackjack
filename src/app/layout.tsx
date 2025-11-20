@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ReduxProvider } from "@/application/providers/ReduxProvider";
+import { Web3Provider } from "@/application/providers/Web3Provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "creator",
     description: "powered development with modern React stack",
-  },
+  }, 
 };
 
 // Optimize resource hints
@@ -54,10 +55,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <ReduxProvider>
-          {children}
-          <Toaster />
-        </ReduxProvider>
+        <Web3Provider>
+          <ReduxProvider>
+            {children}
+            <Toaster />
+          </ReduxProvider>
+        </Web3Provider>
       </body>
     </html>
   );

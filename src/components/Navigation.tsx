@@ -12,6 +12,7 @@ import {
   Menu,
   X
 } from 'lucide-react'
+import ConnectWalletButton from './ConnectWalletButton'
 
 interface NavigationProps {
   currentView: string
@@ -64,6 +65,10 @@ export default function Navigation({ currentView, setCurrentView }: NavigationPr
                 </Button>
               )
             })}
+            {/* Connect Wallet Button */}
+            <div className="ml-2">
+              <ConnectWalletButton />
+            </div>
           </nav>
 
           {/* Mobile Menu Button */}
@@ -105,6 +110,9 @@ export default function Navigation({ currentView, setCurrentView }: NavigationPr
                   </Button>
                 )
               })}
+              <div className="px-4 py-2">
+                <ConnectWalletButton />
+              </div>
             </nav>
           </div>
         )}

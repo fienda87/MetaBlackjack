@@ -22,7 +22,8 @@ import {
   TrendingUp,
   TrendingDown,
   Minimize2,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react'
 import { RootState, AppDispatch } from '@/application/store'
 import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/store/gameSlice'
@@ -31,6 +32,7 @@ import GameResultModal from '@/components/GameResultModal'
 import { useBalanceSync } from '@/hooks/useBalanceSync'
 import { useGameStats } from '@/hooks/useGameStats'
 import { useAudio } from '@/hooks/useAudio'
+import { useGameBet } from '@/hooks/useGameBet'
 import CardDeck from '@/components/CardDeck'
 import { CardDealingAnimation } from '@/lib/card-dealing'
 import { useSettingsStore } from '@/store/settingsStore'
@@ -184,7 +186,7 @@ const GameIndicators = memo(({
 })
 GameIndicators.displayName = 'GameIndicators'
 
-// Betting controls component with improved layout
+// Betting controls component with improved layout and GBC betting
 const BettingControls = memo(({ 
   betAmount, 
   onBetChange, 
@@ -201,6 +203,8 @@ const BettingControls = memo(({
   const [inputValue, setInputValue] = useState(betAmount.toString())
   const [error, setError] = useState('')
   const [showErrorPopup, setShowErrorPopup] = useState(false)
+  const [betMethod, setBetMethod] = useState<'fiat' | 'gbc'>('fiat')
+  const { placeBet: placeGBCBet, isBurning } = useGameBet()
   
   // Handle input change with validation
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,10 +255,38 @@ const BettingControls = memo(({
       setShowErrorPopup(false)
     }
   }, [balance, onBetChange])
+
+  // Handle GBC bet
+  const handleGBCBet = useCallback(async () => {
+    const success = await placeGBCBet(betAmount.toString())
+    if (success) {
+      onDeal()
+    }
+  }, [betAmount, placeGBCBet, onDeal])
   
   return (
     <>
       <div className="space-y-4">
+        {/* Bet Method Selector */}
+        <div className="flex justify-center gap-2">
+          <Button
+            variant={betMethod === 'fiat' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setBetMethod('fiat')}
+            className={betMethod === 'fiat' ? 'bg-green-600 text-black' : 'border-green-600 text-green-400'}
+          >
+            Regular Bet
+          </Button>
+          <Button
+            variant={betMethod === 'gbc' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setBetMethod('gbc')}
+            className={betMethod === 'gbc' ? 'bg-purple-600 text-white' : 'border-purple-600 text-purple-400'}
+          >
+            🪙 GBC Bet
+          </Button>
+        </div>
+
         <div className="text-center">
           <Label className="text-green-400 text-sm">Bet Amount (GBC)</Label>
           <div className="flex justify-center mt-2">
@@ -265,7 +297,7 @@ const BettingControls = memo(({
                 onChange={handleInputChange}
                 placeholder="Enter amount"
                 className="w-32 text-center bg-black border-green-600 text-green-400"
-                disabled={isLoading}
+                disabled={isLoading || isBurning}
                 min="1"
                 max={balance}
               />
@@ -277,18 +309,37 @@ const BettingControls = memo(({
           onQuickBet={handleQuickBet}
           balance={balance}
           currentBet={betAmount}
-          disabled={isLoading}
+          disabled={isLoading || isBurning}
         />
 
         <div className="flex justify-center">
-          <Button
-            onClick={onDeal}
-            className="bg-green-600 text-black hover:bg-green-500 font-bold px-8"
-            disabled={isLoading || betAmount > balance || betAmount < 1 || !!error}
-          >
-            <Play className="w-4 h-4 mr-2" />
-            Deal Cards
-          </Button>
+          {betMethod === 'fiat' ? (
+            <Button
+              onClick={onDeal}
+              className="bg-green-600 text-black hover:bg-green-500 font-bold px-8"
+              disabled={isLoading || betAmount > balance || betAmount < 1 || !!error}
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Deal Cards
+            </Button>
+          ) : (
+            <Button
+              onClick={handleGBCBet}
+              className="bg-purple-600 text-white hover:bg-purple-500 font-bold px-8"
+              disabled={isBurning || betAmount > balance || betAmount < 1}
+            >
+              {isBurning ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Burning GBC...
+                </>
+              ) : (
+                <>
+                  🔥 Burn {betAmount} GBC
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
