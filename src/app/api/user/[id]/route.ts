@@ -8,37 +8,51 @@ export async function GET(
 ) {
   try {
     const { id: userId } = await params
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      include: {
-        transactions: {
-          orderBy: { createdAt: 'desc' },
-          take: 20
-        },
-        _count: {
-          select: {
-            games: true,
-            sessions: true,
-            transactions: true
+    
+    // 🚀 PARALLEL QUERIES
+    const [user, transactions] = await Promise.all([
+      db.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          walletAddress: true,
+          balance: true,
+          createdAt: true,
+          role: true,
+          _count: {
+            select: {
+              games: true,
+              sessions: true,
+              transactions: true
+            }
           }
         }
-      }
-    })
+      }),
+      db.transaction.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          description: true,
+          status: true,
+          createdAt: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10 // Reduce from 20 to 10
+      })
+    ])
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
-
-    // Return user without password
-    const { passwordHash: _, ...userWithoutPassword } = user
 
     return NextResponse.json({
       success: true,
       user: {
-        ...userWithoutPassword,
+        ...user,
+        transactions,
         stats: {
           totalGames: user._count.games,
           totalSessions: user._count.sessions,

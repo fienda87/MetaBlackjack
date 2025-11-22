@@ -8,8 +8,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Wallet, AlertCircle } from 'lucide-react'
-import { connectWallet, getMockWallets, disconnectWallet } from '@/application/store/walletSlice'
-import { RootState, AppDispatch } from '@/application/store'
+import { connectWallet, getMockWallets, disconnectWallet } from '@/application/providers/store/walletSlice'
+import { RootState, AppDispatch } from '@/application/providers/store'
 
 export default function WalletConnection() {
   const dispatch = useDispatch<AppDispatch>()

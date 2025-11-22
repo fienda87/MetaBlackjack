@@ -15,8 +15,8 @@ import {
   X,
   LogOut
 } from 'lucide-react'
-import { RootState, AppDispatch } from '@/application/store'
-import { disconnectWallet, updateUser } from '@/application/store/walletSlice'
+import { RootState, AppDispatch } from '@/application/providers/store'
+import { disconnectWallet, updateUser } from '@/application/providers/store/walletSlice'
 
 interface WalletProps {
   onNavigateToStore: () => void

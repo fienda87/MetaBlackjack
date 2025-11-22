@@ -25,8 +25,8 @@ import {
   AlertCircle,
   Loader2
 } from 'lucide-react'
-import { RootState, AppDispatch } from '@/application/store'
-import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/store/gameSlice'
+import { RootState, AppDispatch } from '@/application/providers/store'
+import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/providers/store/gameSlice'
 import { createCardDisplay, createHiddenCard } from '@/lib/ui-helpers'
 import GameResultModal from '@/components/GameResultModal'
 import { useBalanceSync } from '@/hooks/useBalanceSync'

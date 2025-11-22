@@ -159,117 +159,56 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // Real-time game action handler (NEW - FAST!)
+    // 🚀 ULTRA-OPTIMIZED: Real-time game action handler
     socket.on('game:action', async (data: GameActionRequest) => {
       const startTime = Date.now();
       
-      console.log(`[SOCKET] Received game:action`, { 
-        gameId: data.gameId, 
-        action: data.action, 
-        userId: data.userId 
-      });
-      
-      // Rate limiting check
-      const rateLimit = await checkRateLimit(
-        `game:${data.userId}`,
-        30, // 30 requests
-        60  // per minute
-      );
-      
-      if (!rateLimit.allowed) {
-        console.warn(`[SOCKET] Rate limit exceeded for user ${data.userId}`);
-        socket.emit('game:error', {
-          error: 'Too many requests',
-          message: `Rate limit exceeded. Try again in ${Math.ceil((rateLimit.resetAt - Date.now()) / 1000)}s`,
-          remaining: rateLimit.remaining,
-          resetAt: rateLimit.resetAt
-        });
-        return;
-      }
-      
       try {
-        // Try Redis cache first (VERY FAST - <5ms if Redis available)
-        let game: any = null;
-        let user: any = null;
-        
-        if (isRedisConnected()) {
-          game = await cacheGet(`${CACHE_KEYS.GAME}${data.gameId}`);
-          user = await cacheGet(`${CACHE_KEYS.USER}${data.userId}`);
-          console.log(`[SOCKET] Redis cache check:`, { 
-            gameInCache: !!game, 
-            userInCache: !!user 
-          });
-        }
-        
-        // Fallback to in-memory cache
-        if (!game) {
-          game = cache.get<any>(CacheKeys.game(data.gameId));
-        }
-        if (!user) {
-          user = cache.get<any>(CacheKeys.user(data.userId));
-        }
-        
-        console.log(`[SOCKET] Cache check (after fallback):`, { 
-          gameInCache: !!game, 
-          userInCache: !!user 
-        });
-        
-        // Fallback to database if not cached
-        if (!game || !user) {
-          console.log(`[SOCKET] Cache miss, querying database...`);
-          const [dbGame, dbUser] = await Promise.all([
-            db.game.findUnique({ where: { id: data.gameId } }),
-            db.user.findUnique({ where: { id: data.userId } })
-          ]);
-          game = dbGame;
-          user = dbUser;
-          
-          console.log(`[SOCKET] Database query result:`, { 
-            gameFound: !!game, 
-            userFound: !!user,
-            gameState: game?.state 
-          });
-          
-          // Update cache (both in-memory and Redis)
-          if (game) {
-            cache.set(CacheKeys.game(data.gameId), game, 10000);
-            if (isRedisConnected()) {
-              await cacheSet(`${CACHE_KEYS.GAME}${data.gameId}`, game, CACHE_TTL.GAME);
-            }
-          }
-          if (user) {
-            cache.set(CacheKeys.user(data.userId), user, 30000);
-            if (isRedisConnected()) {
-              await cacheSet(`${CACHE_KEYS.USER}${data.userId}`, user, CACHE_TTL.USER);
-            }
+        // 🚀 SKIP rate limiting in development for speed
+        const isDev = process.env.NODE_ENV === 'development';
+        if (!isDev) {
+          const rateLimit = await checkRateLimit(`game:${data.userId}`, 30, 60);
+          if (!rateLimit.allowed) {
+            socket.emit('game:error', { error: 'Too many requests' });
+            return;
           }
         }
         
+        // 🚀 SKIP cache completely - direct DB query is faster with proper indexes
+        // Cache adds latency and complexity for real-time actions
+        const [game, user] = await Promise.all([
+          db.game.findUnique({
+            where: { id: data.gameId },
+            select: {
+              id: true,
+              playerId: true,
+              state: true,
+              playerHand: true,
+              dealerHand: true,
+              deck: true,
+              currentBet: true,
+              betAmount: true,
+              insuranceBet: true,
+              createdAt: true
+            }
+          }),
+          db.user.findUnique({
+            where: { id: data.userId },
+            select: { id: true, balance: true }
+          })
+        ]);
+        
+        // 🚀 Fast validation
         if (!game || !user) {
-          console.error(`[SOCKET] Game or user not found`);
-          socket.emit('game:error', { 
-            error: 'Game or user not found',
-            gameId: data.gameId 
-          });
+          socket.emit('game:error', { error: 'Game or user not found' });
           return;
         }
-        
-        // Validate
         if (game.playerId !== data.userId) {
-          console.error(`[SOCKET] Unauthorized access attempt`);
           socket.emit('game:error', { error: 'Unauthorized' });
           return;
         }
-        
         if (game.state !== 'PLAYING') {
-          console.warn(`[SOCKET] Invalid game state:`, { 
-            currentState: game.state, 
-            action: data.action 
-          });
-          socket.emit('game:error', { 
-            error: 'Game not in playing state',
-            currentState: game.state
-          });
+          socket.emit('game:error', { error: 'Game not in playing state' });
           return;
         }
         
@@ -373,7 +312,7 @@ export const setupSocket = (io: Server) => {
           netProfit = gameResult.winAmount - game.currentBet;
         }
         
-        // Convert Hand objects to JSON-serializable format
+        // 🚀 Prepare serializable hand objects
         const playerHandJson = {
           cards: newPlayerHand.cards,
           value: newPlayerHand.value,
@@ -390,65 +329,48 @@ export const setupSocket = (io: Server) => {
           isSplittable: false
         };
         
-        // Update database in background (non-blocking)
-        const updatePromise = db.game.update({
-          where: { id: data.gameId },
-          data: {
-            playerHand: playerHandJson as any,
-            dealerHand: dealerHandJson as any,
-            deck: deck as any,
-            currentBet: game.currentBet,
-            state: finalGameState,
-            result: result as any,
-            netProfit,
-            endedAt: finalGameState === 'ENDED' ? new Date() : null
-          }
-        });
+        // 🚀 Calculate new balance
+        const newBalance = finalGameState === 'ENDED' ? user.balance + netProfit : user.balance;
         
-        // Update balance if game ended
+        // 🚀 PARALLEL: Update game and balance simultaneously (critical)
+        await Promise.all([
+          db.game.update({
+            where: { id: data.gameId },
+            data: {
+              playerHand: playerHandJson as any,
+              dealerHand: dealerHandJson as any,
+              deck: deck as any,
+              currentBet: game.currentBet,
+              state: finalGameState,
+              result: result as any,
+              netProfit,
+              endedAt: finalGameState === 'ENDED' ? new Date() : null
+            }
+          }),
+          finalGameState === 'ENDED' ? db.user.update({
+            where: { id: data.userId },
+            data: { balance: newBalance }
+          }) : Promise.resolve()
+        ]);
+        
+        // 🚀 FIRE-AND-FORGET: Transaction record (non-critical)
         if (finalGameState === 'ENDED') {
-          const newBalance = user.balance + netProfit;
-          await Promise.all([
-            db.user.update({
-              where: { id: data.userId },
-              data: { balance: newBalance }
-            }),
-            db.transaction.create({
-              data: {
-                userId: data.userId,
-                type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
-                amount: Math.abs(netProfit),
-                description: `Game ${result?.toLowerCase()} - Blackjack`,
-                balanceBefore: user.balance,
-                balanceAfter: newBalance,
-                status: 'COMPLETED',
-                referenceId: data.gameId
-              }
-            })
-          ]);
-          
-          // Invalidate caches (both Redis and in-memory)
-          cache.delete(CacheKeys.user(data.userId));
-          cache.delete(CacheKeys.game(data.gameId));
-          
-          if (isRedisConnected()) {
-            await Promise.all([
-              cacheDelete(`${CACHE_KEYS.USER}${data.userId}`),
-              cacheDelete(`${CACHE_KEYS.GAME}${data.gameId}`),
-              cacheDelete(`${CACHE_KEYS.BALANCE}${data.userId}`)
-            ]);
-            console.log(`[SOCKET] Redis cache invalidated for user ${data.userId}`);
-          }
+          db.transaction.create({
+            data: {
+              userId: data.userId,
+              type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
+              amount: Math.abs(netProfit),
+              description: `Game ${result?.toLowerCase()} - Blackjack`,
+              balanceBefore: user.balance,
+              balanceAfter: newBalance,
+              status: 'COMPLETED',
+              referenceId: data.gameId
+            }
+          }).catch(err => console.error('[SOCKET] Transaction creation failed:', err));
         }
         
-        // Wait for DB update to complete
-        await updatePromise;
-        
-        const processingTime = Date.now() - startTime;
-        console.log(`[SOCKET] Game action ${data.action} processed in ${processingTime}ms`);
-        
-        // Send instant response via Socket.IO
-        const response = {
+        // 🚀 Send instant response
+        socket.emit('game:updated', {
           success: true,
           game: {
             id: game.id,
@@ -467,16 +389,12 @@ export const setupSocket = (io: Server) => {
             netProfit,
             createdAt: game.createdAt
           },
-          userBalance: user.balance + (finalGameState === 'ENDED' ? netProfit : 0),
-          processingTime: `${processingTime}ms`,
-          timestamp: new Date().toISOString()
-        };
-        
-        console.log(`[SOCKET] Emitting game:updated to client (${processingTime}ms)`);
-        socket.emit('game:updated', response);
+          userBalance: newBalance,
+          processingTime: Date.now() - startTime,
+          timestamp: Date.now()
+        });
         
       } catch (error) {
-        console.error('[SOCKET] Game action error:', error);
         socket.emit('game:error', {
           error: 'Internal server error',
           details: error instanceof Error ? error.message : 'Unknown error'

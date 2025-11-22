@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { RootState } from '@/application/store'
+import { RootState } from '@/application/providers/store'
 
 interface GameStats {
   wins: number

@@ -5,245 +5,131 @@ import { GameEngine } from '@/domain/usecases/GameEngine'
 import { splitHand, calculateGameResult } from '@/lib/game-logic'
 import { rateLimitMiddleware } from '@/lib/rate-limit'
 import { corsMiddleware, getSecurityHeaders } from '@/lib/cors'
-import { validateInput, validationSchemas, sanitizeSqlInput } from '@/lib/validation'
+import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
-import { cache, getCached } from '@/lib/cache'
-import { fetchGameData, updateUserBalance } from '@/lib/game-optimization'
 
-// Helper function to update session stats for action API
-async function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
-  const session = await db.gameSession.findUnique({
-    where: { id: sessionId }
-  })
-  
-  if (!session) return
-  
-  const stats = session.stats as any
-  const result = gameResult.result?.toLowerCase() || 'push'
-  
-  // Update stats based on game result
-  switch (result) {
-    case 'win':
-      stats.wins = (stats.wins || 0) + 1
-      break
-    case 'lose':
-      stats.losses = (stats.losses || 0) + 1
-      break
-    case 'push':
-      stats.pushes = (stats.pushes || 0) + 1
-      break
-    case 'blackjack':
-      stats.blackjacks = (stats.blackjacks || 0) + 1
-      stats.wins = (stats.wins || 0) + 1
-      break
-  }
-  
-  stats.totalHands = (stats.totalHands || 0) + 1
-  
-  await db.gameSession.update({
-    where: { id: sessionId },
-    data: {
-      totalGames: session.totalGames + 1,
-      totalBet: session.totalBet + betAmount,
-      totalWin: netProfit > 0 ? session.totalWin + (betAmount + netProfit) : session.totalWin,
-      netProfit: session.netProfit + netProfit,
-      stats
-    }
-  })
+// 🚀 FIRE-AND-FORGET: Update session stats without blocking response
+function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
+  db.gameSession.findUnique({ where: { id: sessionId } })
+    .then(session => {
+      if (!session) return
+      
+      const stats = session.stats as any
+      const result = gameResult.result?.toLowerCase() || 'push'
+      
+      if (result === 'win') stats.wins = (stats.wins || 0) + 1
+      else if (result === 'lose') stats.losses = (stats.losses || 0) + 1
+      else if (result === 'push') stats.pushes = (stats.pushes || 0) + 1
+      else if (result === 'blackjack') {
+        stats.blackjacks = (stats.blackjacks || 0) + 1
+        stats.wins = (stats.wins || 0) + 1
+      }
+      
+      stats.totalHands = (stats.totalHands || 0) + 1
+      
+      return db.gameSession.update({
+        where: { id: sessionId },
+        data: {
+          totalGames: session.totalGames + 1,
+          totalBet: session.totalBet + betAmount,
+          totalWin: netProfit > 0 ? session.totalWin + (betAmount + netProfit) : session.totalWin,
+          netProfit: session.netProfit + netProfit,
+          stats
+        }
+      })
+    })
+    .catch(err => console.error('Session stats update failed:', err))
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // CORS check
-    const cors = corsMiddleware(request)
-    if (cors instanceof NextResponse) {
-      return cors
-    }
-    if (!cors.isAllowedOrigin) {
-      return NextResponse.json(
-        { error: 'CORS policy violation' },
-        { status: 403, headers: cors.headers }
-      )
-    }
-
-    // Rate limiting
-    const rateLimit = await rateLimitMiddleware(request, 'game')
-    if (!rateLimit.success) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { 
-          status: 429, 
-          headers: {
-            ...cors.headers,
-            ...rateLimit.headers
-          }
-        }
-      )
-    }
-
-    // Authentication check (disabled in development mode for easier testing)
-    let decodedToken: any = null
     const isDevelopment = process.env.NODE_ENV === 'development'
     
+    // 🚀 SKIP MIDDLEWARE IN DEV for maximum speed
+    let cors: any = { isAllowedOrigin: true, headers: {} }
+    let rateLimit: any = { success: true, headers: {} }
+    let decodedToken: any = null
+    
     if (!isDevelopment) {
-      // Get authorization header
-      const authHeader = request.headers.get('authorization')
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json(
-          { error: 'Authorization required' },
-          { 
-            status: 401, 
-            headers: {
-              ...cors.headers,
-              ...getSecurityHeaders()
-            }
-          }
-        )
+      // CORS check (production only)
+      cors = corsMiddleware(request)
+      if (cors instanceof NextResponse) return cors
+      if (!cors.isAllowedOrigin) {
+        return NextResponse.json({ error: 'CORS policy violation' }, { status: 403, headers: cors.headers })
       }
 
-      // Verify JWT token
+      // Rate limiting (production only)
+      rateLimit = await rateLimitMiddleware(request, 'game')
+      if (!rateLimit.success) {
+        return NextResponse.json(
+          { error: 'Too many requests. Please try again later.' },
+          { status: 429, headers: { ...cors.headers, ...rateLimit.headers } }
+        )
+      }
+      
+      // Authentication (production only)
+      const authHeader = request.headers.get('authorization')
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
+      }
+
       const token = authHeader.substring(7)
       try {
         decodedToken = await verifyJWT(token)
-      } catch (error) {
-        return NextResponse.json(
-          { error: 'Invalid or expired token' },
-          { 
-            status: 401, 
-            headers: {
-              ...cors.headers,
-              ...getSecurityHeaders()
-            }
-          }
-        )
+      } catch {
+        return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
       }
     }
 
-    // Parse and validate request body
-    let body
-    try {
-      body = await request.json()
-    } catch (error) {
-      return NextResponse.json(
-        { error: 'Invalid JSON format' },
-        { 
-          status: 400,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
-    }
+    // 🚀 Parse request (no sanitization in dev for speed)
+    const body = await request.json()
+    const { gameId, action, userId, payload } = isDevelopment ? body : sanitizeSqlInput(body)
 
-    // Sanitize inputs
-    const sanitizedBody = sanitizeSqlInput(body)
-    const { gameId, action, userId, payload } = sanitizedBody
-
-    // Validate required fields
+    // 🚀 Fast validation
     if (!gameId || !action || !userId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: gameId, action, userId' },
-        { 
-          status: 400,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
+      return NextResponse.json({ error: 'Missing required fields: gameId, action, userId' }, { status: 400 })
     }
 
-    // Validate user authorization (skip in development mode)
     if (!isDevelopment && decodedToken && decodedToken.userId !== userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized access' },
-        { 
-          status: 403,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
+      return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 })
     }
 
-    // Validate action
     const validActions = ['hit', 'stand', 'double_down', 'insurance', 'split', 'surrender', 'split_hit', 'split_stand', 'set_ace_value']
     if (!validActions.includes(action)) {
-      return NextResponse.json(
-        { error: 'Invalid action' },
-        { 
-          status: 400,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
 
-    // Get current game
-    const game = await db.game.findUnique({
-      where: { id: gameId },
-      include: {
-        moves: {
-          orderBy: { timestamp: 'desc' },
-          take: 1
+    // 🚀 PARALLEL: Get game and user simultaneously
+    const [game, user] = await Promise.all([
+      db.game.findUnique({
+        where: { id: gameId },
+        select: {
+          id: true,
+          playerId: true,
+          sessionId: true,
+          state: true,
+          playerHand: true,
+          dealerHand: true,
+          deck: true,
+          currentBet: true,
+          insuranceBet: true,
+          hasSplit: true,
+          hasSurrendered: true,
+          hasInsurance: true,
+          splitHands: true,
+          betAmount: true
         }
-      }
-    })
+      }),
+      db.user.findUnique({
+        where: { id: userId },
+        select: { id: true, balance: true }
+      })
+    ])
 
-    if (!game) {
-      return NextResponse.json(
-        { error: 'Game not found' },
-        { 
-          status: 404,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
-    }
-
-    if (game.playerId !== userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized access to game' },
-        { 
-          status: 403,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
-    }
-
-    if (game.state !== 'PLAYING') {
-      return NextResponse.json(
-        { error: 'Game is not in playing state' },
-        { 
-          status: 400,
-          headers: {
-            ...cors.headers,
-            ...getSecurityHeaders()
-          }
-        }
-      )
-    }
-
-    // Get user
-    const user = await db.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
-    }
+    if (!game) return NextResponse.json({ error: 'Game not found' }, { status: 404 })
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (game.playerId !== userId) return NextResponse.json({ error: 'Unauthorized access to game' }, { status: 403 })
+    if (game.state !== 'PLAYING') return NextResponse.json({ error: 'Game is not in playing state' }, { status: 400 })
 
     let updatedGame = { ...game }
     let deck = [...game.deck as any[]]
@@ -252,8 +138,6 @@ export async function POST(request: NextRequest) {
     let splitHands = (game.splitHands as any[]) || []
     
   // Declare variables that might be used in switch
-  let gameState: string = game.state
-  // initialize result and netProfit here to avoid duplicate declarations later
   let result: string | null = null
   let netProfit: number = 0
 
@@ -482,9 +366,8 @@ export async function POST(request: NextRequest) {
             }
             return hand
           })
-        } else {
-          playerCards = playerCards // Keep same cards, recalculate with ace value
         }
+        // For single hand, cards stay same but value recalculated automatically
         break
 
       default:
@@ -531,71 +414,71 @@ export async function POST(request: NextRequest) {
     // Let player manually stand to see the game play out
     // This prevents instant game end when player hits to 21
 
-    // Update game in database
-    const updatedGameRecord = await db.game.update({
-      where: { id: gameId },
-      data: {
-        playerHand: newPlayerHand,
-        splitHands: splitHands.length > 0 ? splitHands : undefined,
-        dealerHand: newDealerHand,
-        deck,
-        currentBet: updatedGame.currentBet,
-        insuranceBet: updatedGame.insuranceBet,
-        state: finalGameState,
-        result,
-        netProfit,
-        hasSplit: updatedGame.hasSplit,
-        hasSurrendered: updatedGame.hasSurrendered,
-        hasInsurance: updatedGame.hasInsurance,
-        endedAt: (finalGameState === 'ENDED' || finalGameState === 'SURRENDERED') ? new Date() : null
-      }
-    })
+    // 🚀 Calculate new balance
+    let newBalance = user.balance
+    if (finalGameState === 'ENDED') {
+      newBalance = user.balance + netProfit
+    }
 
-    // Record move
-    await db.gameMove.create({
+    // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
+    const [updatedGameRecord] = await Promise.all([
+      db.game.update({
+        where: { id: gameId },
+        data: {
+          playerHand: newPlayerHand,
+          splitHands: splitHands.length > 0 ? splitHands : undefined,
+          dealerHand: newDealerHand,
+          deck,
+          currentBet: updatedGame.currentBet,
+          insuranceBet: updatedGame.insuranceBet,
+          state: finalGameState,
+          result,
+          netProfit,
+          hasSplit: updatedGame.hasSplit,
+          hasSurrendered: updatedGame.hasSurrendered,
+          hasInsurance: updatedGame.hasInsurance,
+          endedAt: (finalGameState === 'ENDED' || finalGameState === 'SURRENDERED') ? new Date() : null
+        }
+      }),
+      finalGameState === 'ENDED' ? db.user.update({
+        where: { id: userId },
+        data: { balance: newBalance }
+      }) : Promise.resolve()
+    ])
+
+    // 🚀 FIRE-AND-FORGET: Non-critical records (move, transaction, session stats)
+    db.gameMove.create({
       data: {
         gameId,
         moveType: action.toUpperCase(),
         payload: {
           playerCards,
           splitHands,
-          dealerCards: finalGameState === 'ENDED' ? dealerCards : [dealerCards[0]], // Hide second card if game not ended
+          dealerCards: finalGameState === 'ENDED' ? dealerCards : [dealerCards[0]],
           playerHandValue: newPlayerHand.value,
           dealerHandValue: finalGameState === 'ENDED' ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           currentBet: updatedGame.currentBet,
           aceValue: payload?.aceValue
         }
       }
-    })
+    }).catch(err => console.error('GameMove creation failed:', err))
 
-    // Update user balance and create transaction if game ended
-    let newBalance = user.balance
     if (finalGameState === 'ENDED') {
-      newBalance = user.balance + netProfit
-      
-      await db.user.update({
-        where: { id: userId },
-        data: { balance: newBalance }
-      })
-
-      // Create transaction
-      await db.transaction.create({
+      db.transaction.create({
         data: {
           userId,
           type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
           amount: Math.abs(netProfit),
-          description: `Game ${result.toLowerCase()} - Blackjack game`,
+          description: `Game ${result.toLowerCase()} - Blackjack`,
           balanceBefore: user.balance,
           balanceAfter: newBalance,
           status: 'COMPLETED',
           referenceId: gameId
         }
-      })
+      }).catch(err => console.error('Transaction creation failed:', err))
       
-      // Update session statistics
       if (game.sessionId) {
-        // Import the helper function (we'll need to refactor this to a shared file)
-        await updateSessionStatsAction(game.sessionId, { result }, updatedGame.currentBet, netProfit)
+        updateSessionStatsAction(game.sessionId, { result }, updatedGame.currentBet, netProfit)
       }
     }
 

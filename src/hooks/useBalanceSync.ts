@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { RootState, AppDispatch } from '@/application/store'
-import { updateUserBalance } from '@/application/store/walletSlice'
-import { setLocalBalance } from '@/application/store/gameSlice'
+import { RootState, AppDispatch } from '@/application/providers/store'
+import { updateUserBalance } from '@/application/providers/store/walletSlice'
+import { setLocalBalance } from '@/application/providers/store/gameSlice'
 
 export const useBalanceSync = () => {
   const dispatch = useDispatch<AppDispatch>()

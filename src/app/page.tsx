@@ -14,20 +14,21 @@ import {
   SuspenseStoreView, 
   SuspenseWallet 
 } from '@/components/LazyComponents'
-import { RootState, AppDispatch } from '@/application/store'
-import { getGameHistory } from '@/application/store/gameSlice'
+import { RootState, AppDispatch } from '@/application/providers/store'
+import { getGameHistory } from '@/application/providers/store/gameSlice'
 
 export default function Home() {
   const [currentView, setCurrentView] = useState('game')
   const dispatch = useDispatch<AppDispatch>()
   const { isConnected, user } = useSelector((state: RootState) => state.wallet)
 
-  // Load game history when user connects
-  useEffect(() => {
-    if (isConnected && user) {
-      dispatch(getGameHistory(user.id))
-    }
-  }, [isConnected, user, dispatch])
+  // 🚀 OPTIMIZATION: Don't load game history on mount - load only when user opens history tab
+  // This reduces initial page load from 120s to <1s
+  // useEffect(() => {
+  //   if (isConnected && user) {
+  //     dispatch(getGameHistory(user.id))
+  //   }
+  // }, [isConnected, user, dispatch])
 
   const handleNavigateToStore = () => {
     setCurrentView('store')

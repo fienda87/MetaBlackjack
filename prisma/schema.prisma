@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -42,6 +43,9 @@ model User {
   transactions  Transaction[]
   wallets       Wallet[]
   
+  // 🚀 Performance indexes
+  @@index([isActive, createdAt]) // Fast active user queries
+  @@index([lastLoginAt]) // Fast recent login queries
   @@map("users")
 }
 
@@ -82,10 +86,13 @@ model Game {
   session       GameSession? @relation(fields: [sessionId], references: [id])
   moves         GameMove[]
   
-  // Performance indexes
+  // 🚀 Performance indexes
   @@index([playerId, state]) // Fast lookup for active player games
-  @@index([playerId, createdAt]) // Fast history queries
+  @@index([playerId, createdAt(sort: Desc)]) // Fast history queries with DESC order
+  @@index([playerId, result, createdAt]) // Fast filtered history (WIN/LOSE filter)
   @@index([sessionId]) // Fast session lookups
+  @@index([state, createdAt]) // Fast active games queries
+  @@index([result, createdAt]) // Fast result-based analytics
   @@map("games")
 }
 
@@ -127,6 +134,9 @@ model GameMove {
   // Relations
   game          Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
   
+  // 🚀 Performance indexes
+  @@index([gameId, timestamp(sort: Desc)]) // Fast game move history
+  @@index([moveType, timestamp]) // Fast move type analytics
   @@map("game_moves")
 }
 
@@ -153,6 +163,10 @@ model AuditLog {
   userAgent     String?
   timestamp     DateTime  @default(now())
   
+  // 🚀 Performance indexes
+  @@index([userId, timestamp(sort: Desc)]) // Fast user audit queries
+  @@index([resource, resourceId, timestamp]) // Fast resource audit queries
+  @@index([action, timestamp]) // Fast action-based queries
   @@map("audit_logs")
 }
 
@@ -173,6 +187,11 @@ model Transaction {
   // Relations
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
+  // 🚀 Performance indexes
+  @@index([userId, createdAt(sort: Desc)]) // Fast user transaction history (most common query)
+  @@index([userId, type, createdAt]) // Fast filtered transaction queries
+  @@index([referenceId]) // Fast game transaction lookup
+  @@index([status, createdAt]) // Fast pending transaction queries
   @@map("transactions")
 }
 
@@ -203,7 +222,10 @@ model Wallet {
   // Relations
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
+  // 🚀 Performance indexes
   @@unique([userId, currency])
+  @@index([address]) // Fast wallet address lookup
+  @@index([currency, balance]) // Fast currency balance queries
   @@map("wallets")
 }
 

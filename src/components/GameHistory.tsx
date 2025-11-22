@@ -16,7 +16,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
-import { RootState } from '@/application/store'
+import { RootState } from '@/application/providers/store'
 // Simple imports - KISS principle
 import { formatGameResult, formatGBC, getResultColor, getResultBadgeClass } from '@/lib/ui-helpers'
 

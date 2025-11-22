@@ -107,6 +107,7 @@
     "hardhat": "^3.0.15",
     "hardhat-gas-reporter": "^2.3.0",
     "nodemon": "^3.1.10",
+    "pino-pretty": "^13.1.2",
     "redis-mock": "^0.56.3",
     "solidity-coverage": "^0.8.16",
     "tailwindcss": "^4",

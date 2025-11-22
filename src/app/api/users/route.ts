@@ -1,11 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 export async function GET() {
   try {
+    // 🚀 Select only essential fields
     const users = await db.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        walletAddress: true,
+        balance: true,
+        createdAt: true,
+        role: true,
         _count: {
           select: {
             games: true,
@@ -13,18 +19,14 @@ export async function GET() {
             transactions: true
           }
         }
-      }
-    })
-
-    // Return users without passwords
-    const usersWithoutPasswords = users.map(user => {
-      const { passwordHash: _, ...userWithoutPassword } = user
-      return userWithoutPassword
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100 // Limit to 100 users
     })
 
     return NextResponse.json({
       success: true,
-      users: usersWithoutPasswords
+      users
     })
 
   } catch (error) {
