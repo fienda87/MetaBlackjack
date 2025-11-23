@@ -32,9 +32,12 @@ export const config = createConfig({
   },
 })
 
-// Contract addresses (will be updated after deployment)
+// Contract addresses - hardcoded for reliability in client components
 export const CONTRACTS = {
-  GBC_TOKEN: process.env.NEXT_PUBLIC_GBC_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000',
+  GBC_TOKEN: '0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a' as `0x${string}`,
+  DEPOSIT_ESCROW: '0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22' as `0x${string}`,
+  FAUCET: '0xa04B31b44DE6773A6018Eaed625FBE6Cb9AA18a7' as `0x${string}`,
+  WITHDRAW: '0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3' as `0x${string}`,
 }
 
 // GBC Token ABI

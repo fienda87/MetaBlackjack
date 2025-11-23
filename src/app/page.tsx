@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import { useState } from 'react'
 import Navigation from '@/components/Navigation'
 import GameTable from '@/components/GameTable'
 import WalletConnection from '@/components/WalletConnection'
@@ -14,13 +13,11 @@ import {
   SuspenseStoreView, 
   SuspenseWallet 
 } from '@/components/LazyComponents'
-import { RootState, AppDispatch } from '@/application/providers/store'
-import { getGameHistory } from '@/application/providers/store/gameSlice'
+import { useWallet } from '@/web3/useWallet'
 
 export default function Home() {
   const [currentView, setCurrentView] = useState('game')
-  const dispatch = useDispatch<AppDispatch>()
-  const { isConnected, user } = useSelector((state: RootState) => state.wallet)
+  const { isConnected, address } = useWallet()
 
   // 🚀 OPTIMIZATION: Don't load game history on mount - load only when user opens history tab
   // This reduces initial page load from 120s to <1s
@@ -44,8 +41,8 @@ export default function Home() {
   }
 
   const renderCurrentView = () => {
-    // Show wallet connection if not connected
-    if (!isConnected) {
+    // Show wallet connection if not connected (using wagmi state)
+    if (!isConnected || !address) {
       return <WalletConnection />
     }
 

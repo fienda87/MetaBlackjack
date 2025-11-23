@@ -435,3 +435,44 @@ function calculateScore(hand: string[]): number {
   
   return score;
 }
+
+/**
+ * Emit blockchain balance update to client
+ * Called after deposit/withdraw/faucet transactions confirmed
+ */
+export function emitBalanceUpdate(
+  io: Server,
+  walletAddress: string,
+  type: 'deposit' | 'withdraw' | 'faucet',
+  amount: string,
+  txHash: string
+) {
+  // Emit to all connected clients with this wallet address
+  io.emit('blockchain:balance-updated', {
+    walletAddress,
+    type,
+    amount,
+    txHash,
+    timestamp: Date.now()
+  })
+  
+  console.log(`📡 Emitted balance update for ${walletAddress}: ${type} ${amount} GBC`)
+}
+
+/**
+ * Emit game balance update (off-chain)
+ * Called after deposit adds to game balance or withdraw reduces it
+ */
+export function emitGameBalanceUpdate(
+  io: Server,
+  walletAddress: string,
+  newGameBalance: string
+) {
+  io.emit('game:balance-updated', {
+    walletAddress,
+    gameBalance: newGameBalance,
+    timestamp: Date.now()
+  })
+  
+  console.log(`🎮 Emitted game balance update for ${walletAddress}: ${newGameBalance} GBC`)
+}

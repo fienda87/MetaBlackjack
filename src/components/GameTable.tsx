@@ -33,6 +33,7 @@ import { useBalanceSync } from '@/hooks/useBalanceSync'
 import { useGameStats } from '@/hooks/useGameStats'
 import { useAudio } from '@/hooks/useAudio'
 import { useGameBet } from '@/hooks/useGameBet'
+import { useGameBalance } from '@/hooks/useGameBalance'
 import CardDeck from '@/components/CardDeck'
 import { CardDealingAnimation } from '@/lib/card-dealing'
 import { useSettingsStore } from '@/store/settingsStore'
@@ -527,6 +528,14 @@ const GameTable: React.FC = () => {
   const { currentGame, balance, isLoading, error } = useSelector((state: RootState) => state.game)
   const { user } = useSelector((state: RootState) => state.wallet)
   
+  // Use real game balance (off-chain from database)
+  const { 
+    offChainGBC,
+    fetchGameBalance, 
+    address,
+    isConnected 
+  } = useGameBalance()
+  
   // Sync balance between game and wallet
   useBalanceSync()
   
@@ -534,39 +543,36 @@ const GameTable: React.FC = () => {
   const gameStats = useGameStats()
   
   // WebSocket integration for real-time features (FAST game actions!)
-  const socketManager = useSocket(user?.id || 'guest', user?.balance || 1000)
+  const socketManager = useSocket(user?.id || 'guest', offChainGBC || 1000)
   
   // Audio system
   const audio = useAudio()
   
-  // Unified balance calculation - prioritize user balance from wallet
+  // Use real off-chain game balance for betting
   const currentBalance = useMemo(() => {
-    const walletBalance = user?.balance
-    const gameBalance = balance
-    
-    // Use wallet balance if available, otherwise use game balance
-    const finalBalance = walletBalance ?? gameBalance
-    
-    console.log('💰 Balance calculation:', {
-      walletBalance,
-      gameBalance,
-      username: user?.username,
-      final: finalBalance
-    })
-    
-    return finalBalance
-  }, [user?.balance, balance]) // Remove username from dependency to prevent logging loops
-
-  // Sync balance with WebSocket
-  useEffect(() => {
-    if (socketManager.connected && user && socketManager.balance !== user.balance) {
-      // Update local balance if WebSocket balance differs
-      console.log('🔄 Balance sync from WebSocket:', {
-        local: user.balance,
-        remote: socketManager.balance
+    // Prioritize real off-chain game balance from database
+    if (isConnected && address) {
+      console.log('🎮 Using off-chain game balance:', {
+        address,
+        gameBalance: offChainGBC,
+        formatted: `${offChainGBC.toFixed(2)} GBC`
       })
+      return offChainGBC
     }
-  }, [socketManager.balance, user?.balance, socketManager.connected])
+    
+    // Fallback to Redux balance (for non-blockchain users or during loading)
+    const fallbackBalance = user?.balance ?? balance
+    console.log('💰 Using fallback balance:', fallbackBalance)
+    return fallbackBalance
+  }, [offChainGBC, user?.balance, balance, isConnected, address])
+
+  // Sync balance with WebSocket and refresh game balance
+  useEffect(() => {
+    if (socketManager.connected && isConnected && address) {
+      // Refresh game balance from database when connected
+      fetchGameBalance()
+    }
+  }, [socketManager.connected, isConnected, address, fetchGameBalance])
   
   // Save game state to server when game changes
   useEffect(() => {

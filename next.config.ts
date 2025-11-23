@@ -15,6 +15,13 @@ const nextConfig: NextConfig = {
   },
   
   webpack: (config) => {
+    // Fix MetaMask SDK async-storage issue for web
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      '@react-native-async-storage/async-storage': false,
+      'react-native': false,
+    };
+    
     // Enable proper hot module replacement
     return config;
   },

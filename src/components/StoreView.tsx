@@ -2,108 +2,265 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowUpDown, TrendingUp, TrendingDown, Wallet, History, RefreshCw } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { 
+  ArrowDownCircle, 
+  ArrowUpCircle, 
+  Coins,
+  ExternalLink,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Info,
+  AlertTriangle
+} from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
+import { useGameBalance } from '@/hooks/useGameBalance'
+import { writeContract, readContract, waitForTransactionReceipt } from '@wagmi/core'
+import { config } from '@/web3/config'
+import { parseUnits, formatUnits, maxUint256 } from 'viem'
 
-interface CryptoPrice {
-  symbol: string
-  name: string
-  icon: string
-  priceGBC: number
-  priceUSD: number
-  change24h: number
-  volume24h: number
+// Contract addresses - hardcoded for client-side reliability
+const GBC_TOKEN_ADDRESS = '0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a' as `0x${string}`
+const DEPOSIT_ESCROW_ADDRESS = '0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22' as `0x${string}`
+const FAUCET_ADDRESS = '0xa04B31b44DE6773A6018Eaed625FBE6Cb9AA18a7' as `0x${string}`
+const WITHDRAW_ADDRESS = '0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3' as `0x${string}`
+
+// Debug: Log addresses on mount
+if (typeof window !== 'undefined') {
+  console.log('🔍 Contract Addresses:', {
+    GBC_TOKEN_ADDRESS,
+    DEPOSIT_ESCROW_ADDRESS,
+    FAUCET_ADDRESS,
+    WITHDRAW_ADDRESS
+  })
 }
 
-interface PriceResponse {
-  prices: CryptoPrice[]
-  lastUpdated: string
-  source: 'live' | 'cached'
-}
+// ERC20 ABI for approve and allowance
+const ERC20_ABI = [
+  {
+    name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const
 
-interface Transaction {
-  id: string
-  type: string
-  amount: number
-  currency: string
-  fromCurrency?: string
-  toCurrency?: string
-  rate?: number
-  status: string
-  description: string
-  createdAt: string
-}
+// Deposit Escrow ABI
+const DEPOSIT_ABI = [
+  {
+    name: 'deposit',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'amount', type: 'uint256' }],
+    outputs: [],
+  },
+] as const
 
-interface WalletData {
-  id: string
-  currency: string
-  balance: number
-  address?: string
-}
+// Faucet ABI
+const FAUCET_ABI = [
+  {
+    name: 'claim',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    name: 'CLAIM_AMOUNT',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'CLAIM_COOLDOWN',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'lastClaimTime',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'canClaim',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'user', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const
 
-interface User {
-  id: string
-  balance: number
-  wallets: WalletData[]
-  transactions: Transaction[]
-}
+// GameWithdraw ABI
+const WITHDRAW_ABI = [
+  {
+    name: 'withdraw',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'player', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'finalBalance', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'signature', type: 'bytes' },
+    ],
+    outputs: [],
+  },
+] as const
 
-interface StoreViewProps {
-  onNavigateToGame?: () => void
-}
+type TransactionStep = 'idle' | 'approving' | 'approved' | 'depositing' | 'success' | 'error'
+type WithdrawStep = 'idle' | 'requesting' | 'signing' | 'withdrawing' | 'success' | 'error'
 
-export default function StoreView({ onNavigateToGame }: StoreViewProps = {}) {
-  const [prices, setPrices] = useState<CryptoPrice[]>([])
-  const [user, setUser] = useState<User | null>(null)
-  const [selectedFrom, setSelectedFrom] = useState('GBC')
-  const [selectedTo, setSelectedTo] = useState('BTC')
-  const [amount, setAmount] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [priceSource, setPriceSource] = useState<'live' | 'cached'>('cached')
+export default function StoreView() {
+  const { 
+    address, 
+    walletBalance, 
+    gameBalance,
+    onChainGBC,
+    offChainGBC,
+    syncBothBalances, 
+    fetchGameBalance,
+    isConnected, 
+    isCorrectNetwork 
+  } = useGameBalance()
+  
+  // Deposit state
+  const [depositAmount, setDepositAmount] = useState('')
+  const [depositStep, setDepositStep] = useState<TransactionStep>('idle')
+  const [depositTxHash, setDepositTxHash] = useState<string>('')
+  const [allowance, setAllowance] = useState<bigint>(BigInt(0))
+  
+  // Withdraw state
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawStep, setWithdrawStep] = useState<WithdrawStep>('idle')
+  const [withdrawTxHash, setWithdrawTxHash] = useState<string>('')
+  
+  // Faucet state
+  const [isClaiming, setIsClaiming] = useState(false)
+  const [faucetAmount, setFaucetAmount] = useState<string>('0')
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0)
 
-  // Fetch crypto prices
-  const fetchPrices = async () => {
+  // Fetch allowance
+  const fetchAllowance = async () => {
+    if (!address) return
     try {
-      const response = await fetch('/api/store/prices')
-      if (response.ok) {
-        const data: PriceResponse = await response.json()
-        setPrices(data.prices)
-        setLastUpdated(new Date(data.lastUpdated))
-        setPriceSource(data.source)
-      }
+      const result = await readContract(config, {
+        address: GBC_TOKEN_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address as `0x${string}`, DEPOSIT_ESCROW_ADDRESS],
+      })
+      setAllowance(result)
     } catch (error) {
-      console.error('Error fetching prices:', error)
+      console.error('Error fetching allowance:', error)
+    }
+  }
+
+  // Fetch faucet info
+  const fetchFaucetInfo = async () => {
+    if (!address) return
+    try {
+      const [claimAmt, lastClaim, cooldown] = await Promise.all([
+        readContract(config, {
+          address: FAUCET_ADDRESS,
+          abi: FAUCET_ABI,
+          functionName: 'CLAIM_AMOUNT',
+        }),
+        readContract(config, {
+          address: FAUCET_ADDRESS,
+          abi: FAUCET_ABI,
+          functionName: 'lastClaimTime',
+          args: [address as `0x${string}`],
+        }),
+        readContract(config, {
+          address: FAUCET_ADDRESS,
+          abi: FAUCET_ABI,
+          functionName: 'CLAIM_COOLDOWN',
+        }),
+      ])
+      
+      setFaucetAmount(formatUnits(claimAmt, 18))
+      
+      const now = Math.floor(Date.now() / 1000)
+      const nextClaimTime = Number(lastClaim) + Number(cooldown)
+      const remaining = Math.max(0, nextClaimTime - now)
+      setCooldownRemaining(remaining)
+    } catch (error) {
+      console.error('Error fetching faucet info:', error)
+    }
+  }
+
+  // Approve tokens
+  const handleApprove = async () => {
+    if (!address) return
+    
+    setDepositStep('approving')
+    try {
+      const hash = await writeContract(config, {
+        address: GBC_TOKEN_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [DEPOSIT_ESCROW_ADDRESS, maxUint256],
+      })
+
       toast({
-        title: "Error",
-        description: "Failed to fetch crypto prices",
+        title: "Approval Submitted",
+        description: "Waiting for confirmation...",
+      })
+
+      await waitForTransactionReceipt(config, { hash })
+      
+      setDepositStep('approved')
+      await fetchAllowance()
+      
+      toast({
+        title: "✅ Approved!",
+        description: "You can now deposit GBC tokens",
+      })
+    } catch (error: any) {
+      console.error('Approval error:', error)
+      setDepositStep('error')
+      toast({
+        title: "Approval Failed",
+        description: error.message || "Failed to approve tokens",
         variant: "destructive"
       })
     }
   }
 
-  // Fetch user data
-  const fetchUserData = async () => {
-    try {
-      const response = await fetch('/api/store/purchase')
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error)
-    }
-  }
-
-  // Handle purchase/conversion
-  const handlePurchase = async () => {
-    if (!amount || parseFloat(amount) <= 0) {
+  // Deposit tokens
+  const handleDeposit = async () => {
+    if (!address || !depositAmount || parseFloat(depositAmount) <= 0) {
       toast({
         title: "Invalid Amount",
         description: "Please enter a valid amount",
@@ -112,312 +269,762 @@ export default function StoreView({ onNavigateToGame }: StoreViewProps = {}) {
       return
     }
 
-    if (selectedFrom === selectedTo) {
+    const amountWei = parseUnits(depositAmount, 18)
+    
+    // Check allowance
+    if (allowance < amountWei) {
       toast({
-        title: "Invalid Conversion",
-        description: "Cannot convert to the same currency",
+        title: "Approval Required",
+        description: "Please approve tokens first",
         variant: "destructive"
       })
       return
     }
 
-    setIsLoading(true)
+    setDepositStep('depositing')
     try {
-      const response = await fetch('/api/store/purchase', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fromCurrency: selectedFrom,
-          toCurrency: selectedTo,
-          amount: parseFloat(amount)
-        })
+      const hash = await writeContract(config, {
+        address: DEPOSIT_ESCROW_ADDRESS,
+        abi: DEPOSIT_ABI,
+        functionName: 'deposit',
+        args: [amountWei],
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        toast({
-          title: "Transaction Successful",
-          description: `Converted ${amount} ${selectedFrom} to ${data.conversionDetails.toAmount.toFixed(6)} ${selectedTo}`
-        })
-        setUser(data.user)
-        setAmount('')
-        await fetchPrices()
-      } else {
-        toast({
-          title: "Transaction Failed",
-          description: data.error || "Failed to process transaction",
-          variant: "destructive"
-        })
-      }
-    } catch (error) {
-      console.error('Error processing purchase:', error)
+      setDepositTxHash(hash)
+      
       toast({
-        title: "Error",
-        description: "Failed to process transaction",
+        title: "Deposit Submitted",
+        description: "Waiting for confirmation...",
+      })
+
+      await waitForTransactionReceipt(config, { hash })
+      
+      setDepositStep('success')
+      
+      toast({
+        title: "✅ Deposit Successful!",
+        description: `Deposited ${depositAmount} GBC`,
+      })
+
+      // Reset and refresh both balances
+      setDepositAmount('')
+      await syncBothBalances()
+      await fetchGameBalance()
+      await fetchAllowance()
+      
+      // Reset after 3 seconds
+      setTimeout(() => {
+        setDepositStep('idle')
+        setDepositTxHash('')
+      }, 3000)
+    } catch (error: any) {
+      console.error('Deposit error:', error)
+      setDepositStep('error')
+      toast({
+        title: "Deposit Failed",
+        description: error.message || "Failed to deposit tokens",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Handle faucet claim
+  const handleFaucetClaim = async () => {
+    if (!address) return
+    
+    if (cooldownRemaining > 0) {
+      toast({
+        title: "Cooldown Active",
+        description: `Please wait ${formatTime(cooldownRemaining)} before claiming again`,
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsClaiming(true)
+    try {
+      const hash = await writeContract(config, {
+        address: FAUCET_ADDRESS,
+        abi: FAUCET_ABI,
+        functionName: 'claim',
+      })
+
+      toast({
+        title: "Claim Submitted",
+        description: "Waiting for confirmation...",
+      })
+
+      await waitForTransactionReceipt(config, { hash })
+      
+      toast({
+        title: "✅ Claimed Successfully!",
+        description: `Received ${faucetAmount} GBC from faucet`,
+      })
+
+      // Refresh both balances after faucet claim
+      await syncBothBalances()
+      await fetchGameBalance()
+      await fetchFaucetInfo()
+    } catch (error: any) {
+      console.error('Faucet claim error:', error)
+      toast({
+        title: "Claim Failed",
+        description: error.message || "Failed to claim from faucet",
         variant: "destructive"
       })
     } finally {
-      setIsLoading(false)
+      setIsClaiming(false)
     }
   }
 
-  // Calculate conversion result
-  const calculateConversion = () => {
-    if (!amount || parseFloat(amount) <= 0) return 0
-
-    const fromPrice = prices.find(p => p.symbol === selectedFrom)
-    const toPrice = prices.find(p => p.symbol === selectedTo)
-
-    if (!fromPrice || !toPrice) return 0
-
-    let result: number
-    if (selectedFrom === 'GBC') {
-      result = (parseFloat(amount) * fromPrice.priceUSD) / toPrice.priceUSD
-    } else if (selectedTo === 'GBC') {
-      result = (parseFloat(amount) * fromPrice.priceGBC) / toPrice.priceGBC
-    } else {
-      result = (parseFloat(amount) * fromPrice.priceGBC) / toPrice.priceGBC
+  // Handle withdrawal with signature from backend
+  const handleWithdraw = async () => {
+    if (!address || !withdrawAmount || parseFloat(withdrawAmount) <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Please enter a valid amount",
+        variant: "destructive"
+      })
+      return
     }
 
-    return result
+    const withdrawAmountFloat = parseFloat(withdrawAmount)
+
+    // Check game balance (off-chain)
+    if (withdrawAmountFloat > offChainGBC) {
+      toast({
+        title: "Insufficient Game Balance",
+        description: `Your game balance is ${gameBalance} GBC. You can only withdraw from game balance.`,
+        variant: "destructive"
+      })
+      return
+    }
+
+    setWithdrawStep('requesting')
+    try {
+      // Step 1: Request signature from backend
+      toast({
+        title: "Requesting Signature",
+        description: "Getting authorization from server...",
+      })
+
+      const response = await fetch('/api/withdrawal/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerAddress: address,
+          amount: withdrawAmount,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to get signature')
+      }
+
+      const { signature, nonce, finalBalance } = await response.json()
+
+      setWithdrawStep('signing')
+      toast({
+        title: "Signature Received",
+        description: "Submitting withdrawal transaction...",
+      })
+
+      // Step 2: Submit withdrawal to blockchain with signature
+      const amountWei = parseUnits(withdrawAmount, 18)
+      const finalBalanceWei = parseUnits(finalBalance, 18)
+
+      setWithdrawStep('withdrawing')
+      
+      const hash = await writeContract(config, {
+        address: WITHDRAW_ADDRESS,
+        abi: WITHDRAW_ABI,
+        functionName: 'withdraw',
+        args: [
+          address as `0x${string}`,
+          amountWei,
+          finalBalanceWei,
+          BigInt(nonce),
+          signature as `0x${string}`,
+        ],
+      })
+
+      setWithdrawTxHash(hash)
+
+      toast({
+        title: "Withdrawal Submitted",
+        description: "Waiting for confirmation...",
+      })
+
+      // Step 3: Wait for confirmation
+      await waitForTransactionReceipt(config, { hash })
+
+      setWithdrawStep('success')
+
+      toast({
+        title: "✅ Withdrawal Successful!",
+        description: `Withdrew ${withdrawAmount} GBC to your wallet`,
+      })
+
+      // Reset and refresh both balances
+      setWithdrawAmount('')
+      await syncBothBalances()
+      await fetchGameBalance()
+
+      // Reset after 3 seconds
+      setTimeout(() => {
+        setWithdrawStep('idle')
+        setWithdrawTxHash('')
+      }, 3000)
+    } catch (error: any) {
+      console.error('Withdrawal error:', error)
+      setWithdrawStep('error')
+      toast({
+        title: "Withdrawal Failed",
+        description: error.message || "Failed to withdraw tokens",
+        variant: "destructive"
+      })
+      
+      // Reset error state after 5 seconds
+      setTimeout(() => {
+        setWithdrawStep('idle')
+      }, 5000)
+    }
   }
 
-  // API calls with proper lifecycle management
+  // Format time remaining
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    
+    if (hours > 0) return `${hours}h ${minutes}m`
+    if (minutes > 0) return `${minutes}m ${secs}s`
+    return `${secs}s`
+  }
+
+  // Update cooldown timer
   useEffect(() => {
-    // Start API calls when component mounts
-    fetchPrices()
-    fetchUserData()
+    if (cooldownRemaining <= 0) return
+    
+    const timer = setInterval(() => {
+      setCooldownRemaining(prev => Math.max(0, prev - 1))
+    }, 1000)
+    
+    return () => clearInterval(timer)
+  }, [cooldownRemaining])
 
-    // Set up interval for price updates (only when page is active)
-    const interval = setInterval(() => {
-      fetchPrices()
-    }, 60000) // Refresh every minute
-
-    // Cleanup function - stop API calls when component unmounts
-    return () => {
-      clearInterval(interval)
+  // Initial data fetch
+  useEffect(() => {
+    if (address && isConnected) {
+      fetchAllowance()
+      fetchFaucetInfo()
+      fetchGameBalance() // Fetch game balance on load
     }
-  }, []) // Empty dependency array - only run once on mount
+  }, [address, isConnected, fetchGameBalance])
 
-  const formatNumber = (num: number, decimals: number = 6) => {
-    return new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: decimals
-    }).format(num)
-  }
+  // Socket.IO real-time balance updates
+  useEffect(() => {
+    if (!address) return
 
-  const formatCurrency = (num: number, currency: string) => {
-    if (currency === 'GBC') {
-      return `${formatNumber(num, 2)} GBC`
-    } else if (currency === 'USDT') {
-      return `$${formatNumber(num, 2)}`
-    } else {
-      return `${formatNumber(num, 6)} ${currency}`
-    }
+    // Import socket dynamically
+    import('@/hooks/useSocket').then(({ io }) => {
+      if (!io) return
+
+      // Listen for blockchain balance updates (wallet balance)
+      const handleBlockchainUpdate = (data: any) => {
+        if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
+          console.log(`📡 Received blockchain balance update:`, data)
+          syncBothBalances() // Refresh both balances
+          
+          toast({
+            title: `✅ ${data.type.charAt(0).toUpperCase() + data.type.slice(1)} Confirmed!`,
+            description: `${data.amount} GBC - Transaction completed`,
+          })
+        }
+      }
+
+      // Listen for game balance updates (off-chain/database)
+      const handleGameBalanceUpdate = (data: any) => {
+        if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
+          console.log(`🎮 Received game balance update:`, data)
+          fetchGameBalance() // Refresh game balance only
+        }
+      }
+
+      io.on('blockchain:balance-updated', handleBlockchainUpdate)
+      io.on('game:balance-updated', handleGameBalanceUpdate)
+
+      // Cleanup
+      return () => {
+        io.off('blockchain:balance-updated', handleBlockchainUpdate)
+        io.off('game:balance-updated', handleGameBalanceUpdate)
+      }
+    })
+  }, [address, syncBothBalances, fetchGameBalance])
+
+  if (!isConnected || !address) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Alert className="bg-red-900/50 border-red-700">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Please connect your wallet to access deposit, withdraw, and faucet features.
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-black text-green-400">
-      <div className="container mx-auto max-w-6xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-green-400 mb-2">Gobocoin Store</h1>
-          <p className="text-green-300">Trade GBC with major cryptocurrencies</p>
-          {lastUpdated && (
-            <div className="flex items-center gap-2 mt-2 text-sm text-green-300">
-              <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
-              <Badge 
-                variant={priceSource === 'live' ? 'default' : 'secondary'}
-                className={`text-xs ${
-                  priceSource === 'live' 
-                    ? 'bg-green-500 text-black' 
-                    : 'bg-yellow-600 text-black'
-                }`}
-              >
-                {priceSource === 'live' ? '🔴 Live' : '📡 Cached'}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={fetchPrices}
-                className="h-6 w-6 p-0 text-green-300 hover:text-green-400"
-              >
-                <RefreshCw className="w-3 h-3" />
-              </Button>
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold text-green-400 mb-2">GBC Store</h1>
+        <p className="text-green-300">Deposit, Withdraw & Claim Free GBC Tokens</p>
+      </div>
+
+      {/* Network Warning */}
+      {!isCorrectNetwork && (
+        <Alert className="bg-yellow-900/50 border-yellow-700">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Wrong network. Please switch to Polygon Amoy Testnet to use these features.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Balance Display - Dual Balance System */}
+      <Card className="bg-black border border-green-500/30">
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* On-chain Wallet Balance */}
+            <div>
+              <p className="text-xs text-blue-300/70 mb-1">💎 Wallet (On-chain)</p>
+              <p className="text-2xl font-bold text-blue-400">
+                {onChainGBC.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })} GBC
+              </p>
+              <p className="text-xs text-blue-300/50 mt-1">For deposit</p>
             </div>
-          )}
-        </div>
-
-        {/* User Balance */}
-        {user && (
-          <Card className="mb-6 bg-black border border-green-500/30">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Wallet className="w-5 h-5 text-green-400" />
-                  <span className="text-lg font-semibold text-green-400">GBC Balance</span>
-                </div>
-                <Badge variant="outline" className="text-green-400 border-green-500/50 text-lg px-3 py-1">
-                  {formatNumber(user.balance, 2)} GBC
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Trading Panel */}
-          <div className="lg:col-span-2">
-            <Card className="bg-black border border-green-500/30">
-              <CardHeader>
-                <CardTitle className="text-green-400 flex items-center gap-2">
-                  <ArrowUpDown className="w-5 h-5" />
-                  Exchange
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* From Currency */}
-                <div className="space-y-2">
-                  <Label htmlFor="from" className="text-green-400">From</Label>
-                  <div className="flex gap-2">
-                    <Select value={selectedFrom} onValueChange={setSelectedFrom}>
-                      <SelectTrigger className="bg-black/50 border-green-500/30 text-green-400">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-black border-green-500/30">
-                        <SelectItem value="GBC" className="text-green-400">GBC (Gobocoin)</SelectItem>
-                        {prices.map((crypto) => (
-                          <SelectItem key={crypto.symbol} value={crypto.symbol} className="text-green-400">
-                            {crypto.icon} {crypto.symbol} - {crypto.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      id="from"
-                      type="number"
-                      placeholder="0.00"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="bg-black/50 border-green-500/30 text-green-400 placeholder-green-500/50"
-                    />
-                  </div>
-                </div>
-
-                {/* To Currency */}
-                <div className="space-y-2">
-                  <Label htmlFor="to" className="text-green-400">To</Label>
-                  <div className="flex gap-2">
-                    <Select value={selectedTo} onValueChange={setSelectedTo}>
-                      <SelectTrigger className="bg-black/50 border-green-500/30 text-green-400">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-black border-green-500/30">
-                        <SelectItem value="GBC" className="text-green-400">GBC (Gobocoin)</SelectItem>
-                        {prices.map((crypto) => (
-                          <SelectItem key={crypto.symbol} value={crypto.symbol} className="text-green-400">
-                            {crypto.icon} {crypto.symbol} - {crypto.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      id="to"
-                      type="number"
-                      placeholder="0.00"
-                      value={calculateConversion() ? formatNumber(calculateConversion()) : ''}
-                      readOnly
-                      className="bg-black/50 border-green-500/30 text-green-400 placeholder-green-500/50"
-                    />
-                  </div>
-                </div>
-
-                {/* Conversion Info */}
-                {amount && calculateConversion() > 0 && (
-                  <div className="p-3 bg-black/50 rounded-lg border border-green-500/30">
-                    <div className="text-sm text-green-400">
-                      You will receive approximately {formatNumber(calculateConversion())} {selectedTo}
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Button */}
-                <Button
-                  onClick={handlePurchase}
-                  disabled={isLoading || !amount || parseFloat(amount) <= 0}
-                  className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold"
-                >
-                  {isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </div>
-                  ) : (
-                    'Convert Now'
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
+            
+            {/* Off-chain Game Balance */}
+            <div>
+              <p className="text-xs text-green-300/70 mb-1">🎮 Game (Off-chain)</p>
+              <p className="text-2xl font-bold text-green-400">
+                {offChainGBC.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                })} GBC
+              </p>
+              <p className="text-xs text-green-300/50 mt-1">For betting</p>
+            </div>
+            
+            {/* MATIC Balance */}
+            <div>
+              <p className="text-xs text-green-300/70 mb-1">MATIC for Gas</p>
+              <p className="text-xl text-green-400">{walletBalance.matic} MATIC</p>
+              <p className="text-xs text-green-300/50 mt-1">For transactions</p>
+            </div>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Info Panel */}
-          <div className="space-y-6">
-            <Card className="bg-black border border-green-500/30">
-              <CardHeader>
-                <CardTitle className="text-green-400">About GBC</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="text-sm text-green-300">
-                  <p className="mb-2"><strong>GBC (Gobocoin)</strong> is our gaming cryptocurrency.</p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• 1 GBC = $0.01 USD</li>
-                    <li>• Instant deposits</li>
-                    <li>• No transaction fees</li>
-                    <li>• Convertible to major crypto</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
+      <Tabs defaultValue="deposit" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 bg-black border border-green-500/30">
+          <TabsTrigger value="deposit" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+            <ArrowDownCircle className="w-4 h-4 mr-2" />
+            Deposit
+          </TabsTrigger>
+          <TabsTrigger value="withdraw" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+            <ArrowUpCircle className="w-4 h-4 mr-2" />
+            Withdraw
+          </TabsTrigger>
+          <TabsTrigger value="faucet" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+            <Coins className="w-4 h-4 mr-2" />
+            Faucet
+          </TabsTrigger>
+        </TabsList>
 
-            {user && (
-              <Card className="bg-black border-green-900/30">
-                <CardHeader>
-                  <CardTitle className="text-green-400 flex items-center gap-2">
-                    <History className="w-5 h-5" />
-                    Recent Transactions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {user.transactions.slice(0, 5).map((transaction) => (
-                      <div key={transaction.id} className="flex items-center justify-between p-2 bg-green-900/10 rounded">
-                        <div>
-                          <p className="text-sm text-green-400">{transaction.description}</p>
-                          <p className="text-xs text-green-600">
-                            {new Date(transaction.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <Badge 
-                          variant={transaction.status === 'completed' ? 'default' : 'secondary'}
-                          className="text-xs"
-                        >
-                          {transaction.status}
-                        </Badge>
-                      </div>
-                    ))}
-                    {user.transactions.length === 0 && (
-                      <p className="text-sm text-green-600">No transactions yet</p>
+        {/* DEPOSIT TAB */}
+        <TabsContent value="deposit">
+          <Card className="bg-black border border-green-500/30">
+            <CardHeader>
+              <CardTitle className="text-green-400">Deposit GBC Tokens</CardTitle>
+              <CardDescription className="text-green-300">
+                Transfer GBC tokens from your wallet to the game balance
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Allowance Info */}
+              <Alert className="bg-blue-900/30 border-blue-700">
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-1">
+                    <p className="font-medium">Current Allowance:</p>
+                    <p className="text-sm">
+                      {formatUnits(allowance, 18)} GBC approved for deposits
+                    </p>
+                    {allowance === BigInt(0) && (
+                      <p className="text-xs text-yellow-400 mt-2">
+                        ⚠️ You need to approve tokens before depositing
+                      </p>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      </div>
+                </AlertDescription>
+              </Alert>
+
+              {/* Amount Input */}
+              <div className="space-y-2">
+                <Label htmlFor="depositAmount" className="text-green-400">
+                  Amount (GBC)
+                </Label>
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  placeholder="0.00"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  disabled={depositStep === 'approving' || depositStep === 'depositing'}
+                  className="bg-black/50 border-green-500/30 text-green-400 text-lg"
+                />
+                <p className="text-xs text-blue-300">
+                  Available in wallet: {walletBalance.gbc} GBC (On-chain)
+                </p>
+              </div>
+
+              {/* Transaction Progress */}
+              {depositStep !== 'idle' && (
+                <Alert className={`
+                  ${depositStep === 'success' ? 'bg-green-900/30 border-green-700' : ''}
+                  ${depositStep === 'error' ? 'bg-red-900/30 border-red-700' : ''}
+                  ${['approving', 'approved', 'depositing'].includes(depositStep) ? 'bg-blue-900/30 border-blue-700' : ''}
+                `}>
+                  {depositStep === 'approving' && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {depositStep === 'approved' && (
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  )}
+                  {depositStep === 'depositing' && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {depositStep === 'success' && (
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  )}
+                  {depositStep === 'error' && (
+                    <XCircle className="h-4 w-4 text-red-400" />
+                  )}
+                  
+                  <AlertDescription>
+                    {depositStep === 'approving' && 'Approving tokens... Please confirm in MetaMask'}
+                    {depositStep === 'approved' && 'Tokens approved! You can now deposit'}
+                    {depositStep === 'depositing' && 'Depositing tokens... Please wait'}
+                    {depositStep === 'success' && (
+                      <div>
+                        <p className="font-medium">Deposit Successful! 🎉</p>
+                        {depositTxHash && (
+                          <a
+                            href={`https://amoy.polygonscan.com/tx/${depositTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:underline flex items-center gap-1 mt-1"
+                          >
+                            View on PolygonScan <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {depositStep === 'error' && 'Transaction failed. Please try again'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  onClick={handleApprove}
+                  disabled={
+                    !isCorrectNetwork || 
+                    depositStep === 'approving' || 
+                    depositStep === 'depositing' ||
+                    allowance > BigInt(0)
+                  }
+                  className="bg-blue-600 hover:bg-blue-500 text-white"
+                >
+                  {depositStep === 'approving' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Approving...
+                    </>
+                  ) : allowance > BigInt(0) ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Approved
+                    </>
+                  ) : (
+                    'Approve Tokens'
+                  )}
+                </Button>
+
+                <Button
+                  onClick={handleDeposit}
+                  disabled={
+                    !isCorrectNetwork ||
+                    !depositAmount ||
+                    parseFloat(depositAmount) <= 0 ||
+                    allowance === BigInt(0) ||
+                    depositStep === 'approving' ||
+                    depositStep === 'depositing'
+                  }
+                  className="bg-green-600 hover:bg-green-500 text-black font-semibold"
+                >
+                  {depositStep === 'depositing' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Depositing...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownCircle className="w-4 h-4 mr-2" />
+                      Deposit
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Help Text */}
+              <Alert className="bg-green-900/10 border-green-500/30">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs text-green-300">
+                  <p className="font-medium mb-1">How it works:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Click "Approve Tokens" to allow deposits (one-time)</li>
+                    <li>Enter amount and click "Deposit"</li>
+                    <li>Confirm transaction in MetaMask</li>
+                    <li>Wait for confirmation (~5-10 seconds)</li>
+                  </ol>
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* WITHDRAW TAB */}
+        <TabsContent value="withdraw">
+          <Card className="bg-black border border-green-500/30">
+            <CardHeader>
+              <CardTitle className="text-green-400">Withdraw GBC Tokens</CardTitle>
+              <CardDescription className="text-green-300">
+                Transfer GBC tokens from game balance to your wallet
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Game Balance Display */}
+              <Alert className="bg-green-900/30 border-green-700">
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-1">
+                    <p className="font-medium">🎮 Your Game Balance (Off-chain):</p>
+                    <p className="text-xl text-green-400 font-bold">
+                      {offChainGBC.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })} GBC
+                    </p>
+                    <p className="text-xs text-green-300 mt-2">
+                      This is your in-game balance from database. Withdraw to move funds to your wallet (on-chain).
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+
+              {/* Amount Input */}
+              <div className="space-y-2">
+                <Label htmlFor="withdrawAmount" className="text-green-400">
+                  Amount (GBC)
+                </Label>
+                <Input
+                  id="withdrawAmount"
+                  type="number"
+                  placeholder="0.00"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  disabled={withdrawStep === 'requesting' || withdrawStep === 'signing' || withdrawStep === 'withdrawing'}
+                  className="bg-black/50 border-green-500/30 text-green-400 text-lg"
+                />
+                <p className="text-xs text-green-300">
+                  Available in game: {gameBalance} GBC (Off-chain)
+                </p>
+              </div>
+
+              {/* Transaction Progress */}
+              {withdrawStep !== 'idle' && (
+                <Alert className={`
+                  ${withdrawStep === 'success' ? 'bg-green-900/30 border-green-700' : ''}
+                  ${withdrawStep === 'error' ? 'bg-red-900/30 border-red-700' : ''}
+                  ${['requesting', 'signing', 'withdrawing'].includes(withdrawStep) ? 'bg-blue-900/30 border-blue-700' : ''}
+                `}>
+                  {['requesting', 'signing', 'withdrawing'].includes(withdrawStep) && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {withdrawStep === 'success' && (
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  )}
+                  {withdrawStep === 'error' && (
+                    <XCircle className="h-4 w-4 text-red-400" />
+                  )}
+                  
+                  <AlertDescription>
+                    {withdrawStep === 'requesting' && 'Requesting signature from server...'}
+                    {withdrawStep === 'signing' && 'Signature received! Preparing transaction...'}
+                    {withdrawStep === 'withdrawing' && 'Withdrawing tokens... Please confirm in MetaMask'}
+                    {withdrawStep === 'success' && (
+                      <div>
+                        <p className="font-medium">Withdrawal Successful! 🎉</p>
+                        <p className="text-xs mt-1">Your GBC has been transferred to your wallet</p>
+                        {withdrawTxHash && (
+                          <a
+                            href={`https://amoy.polygonscan.com/tx/${withdrawTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-400 hover:underline flex items-center gap-1 mt-1"
+                          >
+                            View on PolygonScan <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    {withdrawStep === 'error' && 'Withdrawal failed. Please try again'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Withdraw Button */}
+              <Button
+                onClick={handleWithdraw}
+                disabled={
+                  !isCorrectNetwork ||
+                  !withdrawAmount ||
+                  parseFloat(withdrawAmount) <= 0 ||
+                  parseFloat(withdrawAmount) > offChainGBC ||
+                  withdrawStep === 'requesting' ||
+                  withdrawStep === 'signing' ||
+                  withdrawStep === 'withdrawing'
+                }
+                className="w-full bg-green-600 hover:bg-green-500 text-black font-semibold h-12"
+              >
+                {withdrawStep === 'requesting' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Requesting Signature...
+                  </>
+                ) : withdrawStep === 'signing' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Preparing Transaction...
+                  </>
+                ) : withdrawStep === 'withdrawing' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Withdrawing...
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpCircle className="w-4 h-4 mr-2" />
+                    Withdraw to Wallet
+                  </>
+                )}
+              </Button>
+
+              {/* Help Text */}
+              <Alert className="bg-green-900/10 border-green-500/30">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs text-green-300">
+                  <p className="font-medium mb-1">How withdrawal works:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Enter amount to withdraw from game balance</li>
+                    <li>Backend generates authorized signature</li>
+                    <li>Confirm withdrawal transaction in MetaMask</li>
+                    <li>GBC tokens transferred to your wallet</li>
+                  </ol>
+                  <p className="mt-2 text-yellow-400">
+                    💡 Tip: Make sure you have enough MATIC for gas fees
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* FAUCET TAB */}
+        <TabsContent value="faucet">
+          <Card className="bg-black border border-green-500/30">
+            <CardHeader>
+              <CardTitle className="text-green-400">Free GBC Faucet</CardTitle>
+              <CardDescription className="text-green-300">
+                Claim free testnet GBC tokens every 24 hours
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Faucet Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="bg-green-900/10 border-green-500/30">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-sm text-green-300 mb-1">Claim Amount</p>
+                    <p className="text-2xl font-bold text-green-400">{faucetAmount} GBC</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-green-900/10 border-green-500/30">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-sm text-green-300 mb-1">Next Claim</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      {cooldownRemaining > 0 ? formatTime(cooldownRemaining) : 'Ready!'}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Claim Button */}
+              <Button
+                onClick={handleFaucetClaim}
+                disabled={!isCorrectNetwork || cooldownRemaining > 0 || isClaiming}
+                className="w-full bg-green-600 hover:bg-green-500 text-black font-semibold h-14 text-lg"
+              >
+                {isClaiming ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Claiming...
+                  </>
+                ) : cooldownRemaining > 0 ? (
+                  <>Wait {formatTime(cooldownRemaining)}</>
+                ) : (
+                  <>
+                    <Coins className="w-5 h-5 mr-2" />
+                    Claim {faucetAmount} GBC Free
+                  </>
+                )}
+              </Button>
+
+              {/* Info */}
+              <Alert className="bg-blue-900/30 border-blue-700">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-sm text-green-300">
+                  <p className="font-medium mb-2">Faucet Rules:</p>
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    <li>Claim {faucetAmount} GBC every 24 hours</li>
+                    <li>Testnet tokens only (no real value)</li>
+                    <li>Use for testing and playing games</li>
+                    <li>Automatic cooldown after each claim</li>
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

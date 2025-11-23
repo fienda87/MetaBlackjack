@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid request format', details: error.errors },
+        { error: 'Invalid request format', details: error.issues },
         { status: 400 }
       )
     }
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       playerAddress,
       withdrawals: history,
-      totalWithdrawn: history.reduce((sum, w: any) => sum + parseFloat(w.amount), 0),
+      totalWithdrawn: history.reduce((sum: number, w: any) => sum + parseFloat(w.amount), 0),
     })
   } catch (error) {
     console.error('Get withdrawal history error:', error)
@@ -141,27 +141,58 @@ export async function GET(request: NextRequest) {
 
 /**
  * Get player's current off-chain balance
- * In production, query from Prisma database
+ * Query from Prisma database
  */
 async function getPlayerBalance(playerAddress: string) {
-  // TODO: Replace with actual database query
-  // const player = await prisma.player.findUnique({ where: { address: playerAddress } })
+  const { db } = await import('@/lib/db')
+  
+  const player = await db.user.findUnique({ 
+    where: { walletAddress: playerAddress.toLowerCase() },
+    select: {
+      balance: true,
+      walletAddress: true,
+    }
+  })
+  
+  if (!player) {
+    throw new Error('Player not found')
+  }
   
   return {
-    playerAddress,
-    offChainBalance: '1000', // Placeholder
+    playerAddress: player.walletAddress,
+    offChainBalance: player.balance.toString(),
     lastUpdated: new Date(),
   }
 }
 
 /**
  * Store used nonce to prevent replay attacks
+ * Using transaction metadata for now
  */
 async function storeUsedNonce(nonce: number, playerAddress: string) {
-  // TODO: Store in database
-  // await prisma.usedNonce.create({
-  //   data: { nonce, playerAddress, timestamp: new Date() }
-  // })
+  const { db } = await import('@/lib/db')
+  
+  // Store nonce in transaction metadata for tracking
+  // In production, you might want a dedicated table for nonces
+  await db.transaction.create({
+    data: {
+      userId: playerAddress.toLowerCase(),
+      type: 'WITHDRAWAL',
+      amount: 0, // Nonce record, not actual transaction
+      description: `Nonce ${nonce} reserved`,
+      status: 'PENDING',
+      balanceBefore: 0,
+      balanceAfter: 0,
+      metadata: {
+        nonce,
+        type: 'NONCE_RESERVATION',
+        timestamp: new Date().toISOString(),
+      }
+    }
+  }).catch(() => {
+    // If user doesn't exist, just log it
+    console.log(`Could not store nonce for ${playerAddress}`)
+  })
   
   console.log(`Stored nonce ${nonce} for player ${playerAddress}`)
 }
@@ -170,12 +201,23 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
  * Get player's withdrawal history
  */
 async function getWithdrawalHistory(playerAddress: string) {
-  // TODO: Query from database
-  // return await prisma.withdrawal.findMany({
-  //   where: { playerAddress },
-  //   orderBy: { createdAt: 'desc' },
-  //   take: 50,
-  // })
+  const { db } = await import('@/lib/db')
   
-  return [] // Placeholder
+  return await db.transaction.findMany({
+    where: { 
+      userId: playerAddress.toLowerCase(),
+      type: 'WITHDRAWAL',
+      status: 'COMPLETED',
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      amount: true,
+      status: true,
+      createdAt: true,
+      description: true,
+      metadata: true,
+    }
+  })
 }

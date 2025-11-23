@@ -1,171 +1,231 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { 
-  User, 
   ArrowDownCircle, 
   ArrowUpCircle, 
-  Gift,
-  Edit2,
-  Check,
-  X,
-  LogOut
+  RefreshCw,
+  ExternalLink,
+  Wallet as WalletIcon,
+  Network,
+  Info
 } from 'lucide-react'
-import { RootState, AppDispatch } from '@/application/providers/store'
-import { disconnectWallet, updateUser } from '@/application/providers/store/walletSlice'
+import { useGameBalance } from '@/hooks/useGameBalance'
+import { useWallet } from '@/web3/useWallet'
+import { switchToPolygonAmoy } from '@/web3/config'
 
 interface WalletProps {
   onNavigateToStore: () => void
 }
 
 export default function Wallet({ onNavigateToStore }: WalletProps) {
-  const dispatch = useDispatch<AppDispatch>()
-  const { user, isConnected } = useSelector((state: RootState) => state.wallet)
+  const {
+    isConnected,
+    address,
+    walletBalance,
+    onChainGBC,
+    offChainGBC,
+    isCorrectNetwork,
+    syncBothBalances,
+    isLoadingGameBalance,
+  } = useGameBalance()
   
-  const [isEditingName, setIsEditingName] = useState(false)
-  const [tempName, setTempName] = useState(user?.username || '')
-  const [hasClaimedBonus, setHasClaimedBonus] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
-
-  useEffect(() => {
-    if (user) {
-      setTempName(user.username || '')
-    }
-  }, [user])
+  const { disconnectWallet: disconnectWeb3Wallet } = useWallet()
+  
+  const [isSyncing, setIsSyncing] = useState(false)
 
   const handleDeposit = () => {
+    // Navigate to store/blockchain page
     onNavigateToStore()
   }
 
   const handleWithdraw = () => {
-    alert('Withdraw feature is temporarily unavailable. Please contact support.')
+    // Navigate to store/blockchain page for withdrawal
+    onNavigateToStore()
   }
 
-  const handleClaimBonus = () => {
-    if (!hasClaimedBonus) {
-      setHasClaimedBonus(true)
-      alert('Congratulations! You have claimed 1000 GBC coins!')
+  const handleSyncBalance = async () => {
+    setIsSyncing(true)
+    try {
+      await syncBothBalances() // Sync both on-chain and off-chain
+    } catch (error) {
+      console.error('Failed to sync balance:', error)
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500)
     }
   }
 
-  const handleEditName = () => {
-    setTempName(user?.username || '')
-    setIsEditingName(true)
-  }
-
-  const handleSaveName = async () => {
-    if (tempName.trim() && user) {
-      setIsUpdating(true)
-      try {
-        await dispatch(updateUser({ userId: user.id, username: tempName.trim() })).unwrap()
-        setIsEditingName(false)
-      } catch (error) {
-        console.error('Failed to update username:', error)
-        alert('Failed to update username. Please try again.')
-      } finally {
-        setIsUpdating(false)
-      }
+  const handleSwitchNetwork = async () => {
+    try {
+      await switchToPolygonAmoy()
+    } catch (error) {
+      console.error('Failed to switch network:', error)
     }
-  }
-
-  const handleCancelEdit = () => {
-    setTempName(user?.username || '')
-    setIsEditingName(false)
   }
 
   const handleSignOut = async () => {
     try {
-      await dispatch(disconnectWallet()).unwrap()
-      // User will be redirected to connect wallet page automatically
+      disconnectWeb3Wallet()
     } catch (error) {
       console.error('Failed to sign out:', error)
     }
   }
 
+  if (!isConnected || !address) {
+    return (
+      <Card className="bg-black border border-red-500/30 shadow-2xl">
+        <CardContent className="p-6 text-center">
+          <Alert className="bg-red-900/50 border-red-700 text-red-100">
+            <AlertDescription>
+              Wallet not connected. Please connect your wallet to view this page.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Account Name Card */}
+      {/* Wrong Network Warning */}
+      {!isCorrectNetwork && (
+        <Alert className="bg-yellow-900/50 border-yellow-700 text-yellow-100">
+          <Network className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>Wrong network. Switch to Polygon Amoy to use wallet features.</span>
+            <Button
+              size="sm"
+              onClick={handleSwitchNetwork}
+              className="bg-yellow-500 hover:bg-yellow-400 text-black"
+            >
+              Switch Network
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Wallet Address Card */}
       <Card className="bg-black border border-green-500/30 shadow-2xl">
         <CardHeader className="text-center pb-4">
           <CardTitle className="text-xl text-green-400 flex items-center justify-center gap-2">
-            <User className="w-5 h-5" />
-            Account Name
+            <WalletIcon className="w-5 h-5" />
+            Connected Wallet
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-center">
-          {isEditingName ? (
-            <div className="flex items-center justify-center gap-2">
-              <Input
-                value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
-                className="bg-black/50 border-green-500/30 text-green-400 text-center max-w-xs focus:border-green-400/70"
-                placeholder="Enter your name"
-                disabled={isUpdating}
-              />
-              <Button
-                size="sm"
-                onClick={handleSaveName}
-                disabled={isUpdating}
-                className="bg-green-500 hover:bg-green-400 text-black p-2"
-              >
-                {isUpdating ? (
-                  <div className="w-4 h-4 border-2 border-black border-t-transparent animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleCancelEdit}
-                disabled={isUpdating}
-                className="border-green-500/50 text-green-400 hover:bg-black/20 p-2"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-3">
-              <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center border border-green-500/30">
-                <User className="w-5 h-5 text-green-400" />
-              </div>
-              <span className="text-2xl font-bold text-green-400">{user?.username || 'Anonymous Player'}</span>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <p className="text-sm text-green-300 font-medium">Wallet Address</p>
+            <div className="p-3 bg-black/50 rounded-lg text-sm font-mono text-green-400 border border-green-500/30 flex items-center justify-between">
+              <span>{address.slice(0, 10)}...{address.slice(-8)}</span>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={handleEditName}
-                className="text-green-400 hover:text-green-300 hover:bg-black/20 p-2"
+                onClick={() => window.open(`https://amoy.polygonscan.com/address/${address}`, '_blank')}
+                className="text-green-400 hover:text-green-300 hover:bg-green-900/20 p-1 h-auto"
               >
-                <Edit2 className="w-4 h-4" />
+                <ExternalLink className="w-3 h-3" />
               </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Wallet Info Card */}
-      <Card className="bg-black border border-green-500/30 shadow-2xl">
-        <CardHeader className="text-center pb-4">
-          <CardTitle className="text-xl text-green-400">Wallet Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm text-green-300 font-medium">Wallet Address</p>
-            <div className="p-3 bg-black/50 rounded-lg text-sm font-mono text-green-400 border border-green-500/30">
-              {user?.walletAddress}
             </div>
           </div>
           
           <div className="space-y-2">
-            <p className="text-sm text-green-300 font-medium">GBC Balance</p>
-            <div className="p-3 bg-black rounded-lg text-green-400 font-bold border border-green-500/50">
-              {user?.balance.toLocaleString() || '0'} GBC
+            <p className="text-sm text-green-300 font-medium">Network</p>
+            <div className="p-3 bg-black/50 rounded-lg text-green-400 border border-green-500/30">
+              {isCorrectNetwork ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  Polygon Amoy Testnet
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 text-yellow-400">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                  Wrong Network
+                </span>
+              )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Balance Card - Dual Balance System */}
+      <Card className="bg-black border border-green-500/30 shadow-2xl">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl text-green-400">Balances</CardTitle>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleSyncBalance}
+              disabled={isSyncing || isLoadingGameBalance}
+              className="text-green-400 hover:text-green-300 hover:bg-green-900/20"
+            >
+              <RefreshCw className={`w-4 h-4 ${(isSyncing || isLoadingGameBalance) ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* MATIC Balance */}
+          <div className="space-y-2">
+            <p className="text-sm text-green-300 font-medium">MATIC Balance (Gas Fee)</p>
+            <div className="p-3 bg-black/50 rounded-lg text-green-400 border border-green-500/30">
+              {walletBalance.matic} MATIC
+            </div>
+          </div>
+          
+          {/* On-chain GBC (Wallet) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-blue-300 font-medium">💎 Wallet Balance (On-chain)</p>
+              <span className="text-xs text-blue-400/70 bg-blue-900/30 px-2 py-1 rounded">Blockchain</span>
+            </div>
+            <div className="p-3 bg-gradient-to-r from-blue-900/20 to-blue-800/10 rounded-lg text-blue-400 font-bold text-lg border border-blue-500/50">
+              {onChainGBC.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} GBC
+            </div>
+            <p className="text-xs text-blue-300/60">
+              Use this for Deposit → Game Balance
+            </p>
+          </div>
+
+          {/* Off-chain GBC (Game) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-green-300 font-medium">🎮 Game Balance (Off-chain)</p>
+              <span className="text-xs text-green-400/70 bg-green-900/30 px-2 py-1 rounded">Database</span>
+            </div>
+            <div className="p-3 bg-gradient-to-r from-green-900/20 to-green-800/10 rounded-lg text-green-400 font-bold text-lg border border-green-500/50">
+              {offChainGBC.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} GBC
+            </div>
+            <p className="text-xs text-green-300/60">
+              Available for betting in game
+            </p>
+          </div>
+
+          {/* Info Alert - Balance Flow */}
+          <Alert className="bg-blue-900/30 border-blue-700/50 text-blue-100">
+            <Info className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              <strong>Balance Flow:</strong> Wallet (On-chain) → Deposit → Game Balance (Off-chain) → Play → Withdraw → Wallet
+            </AlertDescription>
+          </Alert>
+
+          {/* Low Balance Warning */}
+          {offChainGBC < 10 && (
+            <Alert className="bg-yellow-900/50 border-yellow-700 text-yellow-100">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Low game balance! Deposit from your wallet or claim from faucet to play.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -175,17 +235,19 @@ export default function Wallet({ onNavigateToStore }: WalletProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Button 
               onClick={handleDeposit}
-              className="bg-green-600 hover:bg-green-500 text-black font-semibold gap-2 h-12 shadow-lg transition-all duration-200"
+              disabled={!isCorrectNetwork}
+              className="bg-green-600 hover:bg-green-500 text-black font-semibold gap-2 h-12 shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowDownCircle className="w-5 h-5" />
-              Deposit
+              Deposit GBC
             </Button>
             <Button 
               onClick={handleWithdraw}
-              className="bg-green-600 hover:bg-green-500 text-black font-semibold gap-2 h-12 shadow-lg transition-all duration-200"
+              disabled={!isCorrectNetwork || offChainGBC < 1}
+              className="bg-green-600 hover:bg-green-500 text-black font-semibold gap-2 h-12 shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowUpCircle className="w-5 h-5" />
-              Withdraw
+              Withdraw to Wallet
             </Button>
           </div>
           
@@ -195,44 +257,35 @@ export default function Wallet({ onNavigateToStore }: WalletProps) {
               variant="outline"
               className="w-full border-red-600/50 text-red-400 hover:bg-red-900/20 hover:text-red-300 gap-2 h-12 transition-all duration-200"
             >
-              <LogOut className="w-5 h-5" />
-              Sign Out
+              Disconnect Wallet
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* New Player Bonus */}
-      {!hasClaimedBonus && (
-        <Card className="bg-black/50 border border-green-500/40 backdrop-blur-sm">
+      {/* Get Free GBC from Faucet */}
+      {(onChainGBC === 0 && offChainGBC === 0) && (
+        <Card className="bg-gradient-to-r from-green-900/30 to-blue-900/30 border border-green-500/40 backdrop-blur-sm">
           <CardContent className="p-6 text-center">
             <div className="space-y-4">
               <div className="flex items-center justify-center gap-2">
-                <Gift className="w-6 h-6 text-green-400" />
-                <h3 className="text-xl font-bold text-green-400">New Player Bonus</h3>
+                <WalletIcon className="w-6 h-6 text-green-400" />
+                <h3 className="text-xl font-bold text-green-400">Get Free GBC Tokens</h3>
               </div>
-              <p className="text-green-300">
-                Claim your free 1000 GBC coins and start playing!
+              <p className="text-green-300 text-sm">
+                You need GBC tokens to play. Claim free testnet GBC from faucet then deposit to game!
               </p>
               <Button 
-                onClick={handleClaimBonus}
+                onClick={handleDeposit}
+                disabled={!isCorrectNetwork}
                 className="bg-green-500 hover:bg-green-400 text-black font-semibold gap-2 w-full sm:w-auto shadow-lg transition-all duration-200"
               >
-                <Gift className="w-5 h-5" />
-                Claim 1000 GBC FREE
+                <ExternalLink className="w-5 h-5" />
+                Go to Faucet & Deposit
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Bonus Claimed */}
-      {hasClaimedBonus && (
-        <Card className="bg-black/30 border border-green-500/30 backdrop-blur-sm">
-          <CardContent className="p-6 text-center">
-            <div className="flex items-center justify-center gap-2">
-              <Gift className="w-6 h-6 text-green-400" />
-              <p className="text-green-300 font-semibold">Bonus claimed successfully!</p>
+              <p className="text-xs text-green-300/70">
+                Faucet gives you wallet balance, then deposit to game balance to play
+              </p>
             </div>
           </CardContent>
         </Card>

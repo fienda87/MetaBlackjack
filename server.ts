@@ -1,6 +1,8 @@
-// server.ts - Next.js Standalone + Socket.IO + Redis
+// server.ts - Next.js Standalone + Socket.IO + Redis + Blockchain Listeners
 import { setupSocket } from './src/lib/socket';
+import { setSocketInstance } from './src/lib/socket-instance';
 import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis';
+import { initBlockchainListeners } from './blockchain/listeners';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';
@@ -45,6 +47,9 @@ async function createCustomServer() {
     });
 
     setupSocket(io);
+    
+    // Set socket instance for API routes
+    setSocketInstance(io);
 
     // Start the server first
     server.listen(currentPort, hostname, async () => {
@@ -65,6 +70,17 @@ async function createCustomServer() {
         }
       } catch {
         console.log(`> Redis: ⚠️  Not available (using in-memory cache)`);
+      }
+
+      // Initialize blockchain event listeners (non-blocking)
+      try {
+        console.log('\n' + '═'.repeat(70));
+        await initBlockchainListeners(io);
+        console.log('═'.repeat(70) + '\n');
+      } catch (error) {
+        console.error('\n❌ Failed to start blockchain listeners:', error);
+        console.log('⚠️  Server will continue without blockchain event monitoring');
+        console.log('   Check RPC_URL and contract addresses in .env\n');
       }
     });
 
