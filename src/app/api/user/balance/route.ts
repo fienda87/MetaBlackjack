@@ -42,20 +42,25 @@ export async function GET(request: NextRequest) {
     if (!user) {
       // User not found - they might need to create account first
       return NextResponse.json({
+        walletAddress: normalizedAddress,
+        gameBalance: '0',
         balance: '0',
         totalDeposited: '0',
         totalWithdrawn: '0',
         exists: false,
+        lastUpdated: new Date().toISOString(),
         message: 'User not registered yet',
       })
     }
 
     return NextResponse.json({
-      balance: user.balance.toString(),
+      walletAddress: user.walletAddress,
+      gameBalance: user.balance.toString(), // ✅ Key field for useGameBalance hook
+      balance: user.balance.toString(), // Keep for backward compatibility
       totalDeposited: user.totalDeposited.toString(),
       totalWithdrawn: user.totalWithdrawn.toString(),
       exists: true,
-      lastUpdated: user.updatedAt,
+      lastUpdated: user.updatedAt.toISOString(),
     })
   } catch (error) {
     console.error('Error fetching user balance:', error)

@@ -142,6 +142,19 @@ export class FaucetListener {
     if (apiResult) {
       console.log(`🎉 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
       
+      // Emit Socket.IO events directly from listener (faucet only updates wallet, not game balance)
+      if (this.io) {
+        const eventData = {
+          walletAddress: walletAddress.toLowerCase(),
+          type: 'faucet',
+          amount: claimAmount.toString(),
+          txHash: event.transactionHash,
+          timestamp: Date.now()
+        }
+        this.io.emit('blockchain:balance-updated', eventData)
+        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
+      }
+      
       return {
         txHash: event.transactionHash,
         userId: apiResult.data.userId,

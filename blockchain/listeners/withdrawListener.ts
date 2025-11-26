@@ -146,6 +146,27 @@ export class WithdrawListener {
     if (apiResult) {
       console.log(`💸 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
       
+      // Emit Socket.IO events directly from listener
+      if (this.io) {
+        const eventData = {
+          walletAddress: walletAddress.toLowerCase(),
+          type: 'withdraw',
+          amount: withdrawAmount.toString(),
+          txHash: event.transactionHash,
+          timestamp: Date.now()
+        }
+        this.io.emit('blockchain:balance-updated', eventData)
+        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
+        
+        const balanceData = {
+          walletAddress: walletAddress.toLowerCase(),
+          gameBalance: apiResult.data.balanceAfter.toString(),
+          timestamp: Date.now()
+        }
+        this.io.emit('game:balance-updated', balanceData)
+        console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${apiResult.data.balanceAfter} GBC`)
+      }
+      
       return {
         txHash: event.transactionHash,
         userId: apiResult.data.userId,

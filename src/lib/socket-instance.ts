@@ -65,7 +65,8 @@ export function emitBlockchainBalanceUpdate(
   amount: number,
   txHash: string
 ) {
-  if (!socketInstance) {
+  const io = getSocketInstance()
+  if (!io) {
     console.warn('⚠️ Socket.IO not available, skipping blockchain balance update emit')
     return false
   }
@@ -78,7 +79,8 @@ export function emitBlockchainBalanceUpdate(
     timestamp: Date.now()
   }
 
-  socketInstance.emit('blockchain:balance-updated', data)
+  // Broadcast to all connected clients
+  io.emit('blockchain:balance-updated', data)
   console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}: ${type} ${amount} GBC`)
   
   return true
@@ -92,7 +94,8 @@ export function emitGameBalanceUpdate(
   walletAddress: string,
   newGameBalance: number
 ) {
-  if (!socketInstance) {
+  const io = getSocketInstance()
+  if (!io) {
     console.warn('⚠️ Socket.IO not available, skipping game balance update emit')
     return false
   }
@@ -103,7 +106,8 @@ export function emitGameBalanceUpdate(
     timestamp: Date.now()
   }
 
-  socketInstance.emit('game:balance-updated', data)
+  // Broadcast to all connected clients
+  io.emit('game:balance-updated', data)
   console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${newGameBalance} GBC`)
   
   return true

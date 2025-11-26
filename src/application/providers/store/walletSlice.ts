@@ -28,6 +28,26 @@ const initialState: WalletState = {
   mockWallets: []
 }
 
+// Fetch user by wallet address (get or create)
+export const fetchUserByWallet = createAsyncThunk(
+  'wallet/fetchByWallet',
+  async (walletAddress: string, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`/api/user/wallet?address=${walletAddress}`)
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch user')
+      }
+      
+      const data = await response.json()
+      return data
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+)
+
 // Connect wallet (mock for development)
 export const connectWallet = createAsyncThunk(
   'wallet/connect',
@@ -121,10 +141,44 @@ const walletSlice = createSlice({
       if (state.user) {
         state.user.balance = action.payload
       }
+    },
+    
+    setUser: (state, action: PayloadAction<User>) => {
+      state.user = action.payload
+      state.isConnected = true
+      state.error = null
+    },
+    
+    clearUser: (state) => {
+      state.user = null
+      state.isConnected = false
+      state.error = null
     }
   },
   
   extraReducers: (builder) => {
+    // Fetch user by wallet
+    builder
+      .addCase(fetchUserByWallet.pending, (state) => {
+        state.isConnecting = true
+        state.error = null
+      })
+      .addCase(fetchUserByWallet.fulfilled, (state, action) => {
+        state.isConnecting = false
+        state.isConnected = true
+        state.user = action.payload.user
+        state.error = null
+        console.log('✅ User loaded from wallet:', {
+          address: action.payload.user.walletAddress,
+          username: action.payload.user.username,
+          balance: action.payload.user.balance
+        })
+      })
+      .addCase(fetchUserByWallet.rejected, (state, action) => {
+        state.isConnecting = false
+        state.error = action.payload as string
+      })
+    
     // Get mock wallets
     builder
       .addCase(getMockWallets.fulfilled, (state, action) => {
@@ -177,5 +231,5 @@ const walletSlice = createSlice({
   }
 })
 
-export const { clearError, updateUserBalance } = walletSlice.actions
+export const { clearError, updateUserBalance, setUser, clearUser } = walletSlice.actions
 export default walletSlice.reducer

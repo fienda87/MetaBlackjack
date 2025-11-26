@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
 import Navigation from '@/components/Navigation'
 import GameTable from '@/components/GameTable'
 import WalletConnection from '@/components/WalletConnection'
@@ -14,10 +15,22 @@ import {
   SuspenseWallet 
 } from '@/components/LazyComponents'
 import { useWallet } from '@/web3/useWallet'
+import { fetchUserByWallet } from '@/application/providers/store/walletSlice'
+import { AppDispatch, RootState } from '@/application/providers/store'
 
 export default function Home() {
   const [currentView, setCurrentView] = useState('game')
+  const dispatch = useDispatch<AppDispatch>()
   const { isConnected, address } = useWallet()
+  const { user } = useSelector((state: RootState) => state.wallet)
+
+  // Sync Redux user with Web3 wallet (fallback if WalletConnection skipped)
+  useEffect(() => {
+    if (isConnected && address && !user) {
+      console.log('🔄 [Page] Syncing Redux user with wallet:', address)
+      dispatch(fetchUserByWallet(address))
+    }
+  }, [isConnected, address, user, dispatch])
 
   // 🚀 OPTIMIZATION: Don't load game history on mount - load only when user opens history tab
   // This reduces initial page load from 120s to <1s

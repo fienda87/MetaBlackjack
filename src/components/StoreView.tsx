@@ -20,7 +20,8 @@ import {
 } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { useGameBalance } from '@/hooks/useGameBalance'
-import { writeContract, readContract, waitForTransactionReceipt } from '@wagmi/core'
+import { useWriteContract, useReadContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
+import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { config } from '@/web3/config'
 import { parseUnits, formatUnits, maxUint256 } from 'viem'
 
@@ -142,8 +143,10 @@ type TransactionStep = 'idle' | 'approving' | 'approved' | 'depositing' | 'succe
 type WithdrawStep = 'idle' | 'requesting' | 'signing' | 'withdrawing' | 'success' | 'error'
 
 export default function StoreView() {
+  const { address: wagmiAddress } = useAccount()
+  const address = wagmiAddress // Alias untuk kompatibilitas
+  
   const { 
-    address, 
     walletBalance, 
     gameBalance,
     onChainGBC,
@@ -153,6 +156,9 @@ export default function StoreView() {
     isConnected, 
     isCorrectNetwork 
   } = useGameBalance()
+  
+  // Wagmi hooks for contract interactions
+  const { writeContractAsync } = useWriteContract()
   
   // Deposit state
   const [depositAmount, setDepositAmount] = useState('')
@@ -226,7 +232,7 @@ export default function StoreView() {
     
     setDepositStep('approving')
     try {
-      const hash = await writeContract(config, {
+      const hash = await writeContractAsync({
         address: GBC_TOKEN_ADDRESS,
         abi: ERC20_ABI,
         functionName: 'approve',
@@ -283,7 +289,7 @@ export default function StoreView() {
 
     setDepositStep('depositing')
     try {
-      const hash = await writeContract(config, {
+      const hash = await writeContractAsync({
         address: DEPOSIT_ESCROW_ADDRESS,
         abi: DEPOSIT_ABI,
         functionName: 'deposit',
@@ -303,14 +309,21 @@ export default function StoreView() {
       
       toast({
         title: "✅ Deposit Successful!",
-        description: `Deposited ${depositAmount} GBC`,
+        description: `Deposited ${depositAmount} GBC - Updating balance...`,
       })
 
-      // Reset and refresh both balances
+      // Wait for backend to process (blockchain listener takes a few seconds)
+      await new Promise(resolve => setTimeout(resolve, 3000))
+
+      // Refresh both balances (bypasses cache)
       setDepositAmount('')
       await syncBothBalances()
-      await fetchGameBalance()
       await fetchAllowance()
+      
+      toast({
+        title: "✅ Balance Updated!",
+        description: "Your game balance has been updated",
+      })
       
       // Reset after 3 seconds
       setTimeout(() => {
@@ -343,7 +356,7 @@ export default function StoreView() {
 
     setIsClaiming(true)
     try {
-      const hash = await writeContract(config, {
+      const hash = await writeContractAsync({
         address: FAUCET_ADDRESS,
         abi: FAUCET_ABI,
         functionName: 'claim',
@@ -436,7 +449,7 @@ export default function StoreView() {
 
       setWithdrawStep('withdrawing')
       
-      const hash = await writeContract(config, {
+      const hash = await writeContractAsync({
         address: WITHDRAW_ADDRESS,
         abi: WITHDRAW_ABI,
         functionName: 'withdraw',

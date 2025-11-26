@@ -4,7 +4,7 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// 🚀 ULTRA OPTIMIZED: Fast connection with timeouts to prevent hanging
+// 🚀 ULTRA OPTIMIZED: Fast connection with increased transaction timeout
 export const db =
   globalForPrisma.prisma ??
   new PrismaClient({
@@ -14,15 +14,12 @@ export const db =
         url: process.env.DATABASE_URL
       }
     },
-    // 🚀 Add connection timeout and pool settings
-    // @ts-ignore - Prisma Client doesn't expose these in types but they work
-    __internal: {
-      engine: {
-        connectTimeout: 5000, // 5 second connection timeout
-        pool_timeout: 10, // 10 second pool timeout
-        connection_limit: 10 // Maximum 10 connections in pool
-      }
-    }
+    // Increase transaction timeout for slow network/blockchain operations
+    transactionOptions: {
+      timeout: 30000, // 30 seconds (increased from default 5s)
+      maxWait: 10000, // 10 seconds max wait to acquire transaction
+      isolationLevel: undefined, // Use default isolation level
+    },
   })
 
 // Configure connection pool

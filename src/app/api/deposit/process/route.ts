@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withInternalAuth } from '@/lib/internal-auth';
-import { emitBlockchainBalanceUpdate, emitGameBalanceUpdate } from '@/lib/socket-instance';
 import { z } from 'zod';
 
 /**
@@ -107,9 +106,8 @@ export async function POST(request: NextRequest) {
 
       console.log(`✅ Deposit processed: ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
 
-      // Emit real-time balance updates via Socket.IO
-      emitBlockchainBalanceUpdate(normalizedAddress, 'deposit', amount, txHash);
-      emitGameBalanceUpdate(normalizedAddress, balanceAfter);
+      // Note: Socket.IO emit is handled by blockchain listener, not API route
+      // API routes in Next.js 15 don't share memory with custom server
 
       // Return success with transaction details
       return NextResponse.json({

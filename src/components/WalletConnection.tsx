@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useDispatch } from 'react-redux'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -9,9 +10,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Wallet, AlertCircle, RefreshCw, Network } from 'lucide-react'
 import { useWallet } from '@/web3/useWallet'
 import { switchToPolygonAmoy } from '@/web3/config'
+import { fetchUserByWallet, clearUser } from '@/application/providers/store/walletSlice'
+import { AppDispatch } from '@/application/providers/store'
 
 export default function WalletConnection() {
   const router = useRouter()
+  const dispatch = useDispatch<AppDispatch>()
   const {
     isConnected,
     address,
@@ -24,6 +28,17 @@ export default function WalletConnection() {
     syncBalance,
     clearError,
   } = useWallet()
+
+  // Sync Redux user state with Web3 wallet
+  useEffect(() => {
+    if (isConnected && address && isCorrectNetwork) {
+      console.log('🔄 Syncing Redux user with wallet:', address)
+      dispatch(fetchUserByWallet(address))
+    } else if (!isConnected) {
+      // Clear user when disconnected
+      dispatch(clearUser())
+    }
+  }, [isConnected, address, isCorrectNetwork, dispatch])
 
   // Auto-redirect to game after successful connection
   useEffect(() => {
@@ -43,6 +58,11 @@ export default function WalletConnection() {
     } catch (err) {
       console.error('Failed to connect:', err)
     }
+  }
+
+  const handleDisconnect = () => {
+    disconnectWallet()
+    dispatch(clearUser())
   }
 
   const handleSwitchNetwork = async () => {
@@ -101,7 +121,7 @@ export default function WalletConnection() {
           </Button>
 
           <Button 
-            onClick={disconnectWallet} 
+            onClick={handleDisconnect} 
             variant="outline" 
             className="w-full bg-black/20 hover:bg-black/30 text-yellow-400 border-yellow-500/50 hover:border-yellow-400/70 transition-all duration-200"
           >
@@ -161,7 +181,7 @@ export default function WalletConnection() {
           </div>
           
           <Button 
-            onClick={disconnectWallet} 
+            onClick={handleDisconnect} 
             variant="outline" 
             className="w-full bg-black/20 hover:bg-black/30 text-green-400 border-green-500/50 hover:border-green-400/70 transition-all duration-200"
           >

@@ -65,17 +65,27 @@ export function useGameBalance() {
         throw new Error('Failed to fetch game balance')
       }
 
-      const data: GameBalanceData = await response.json()
+      const data: any = await response.json()
+      
+      // Extract game balance from response
+      const balanceValue = data.gameBalance || data.balance || '0'
+      
+      console.log('📊 API Response:', {
+        gameBalance: data.gameBalance,
+        balance: data.balance,
+        extracted: balanceValue,
+        exists: data.exists
+      })
       
       // Update cache
       balanceCache.set(address, {
-        balance: data.gameBalance,
+        balance: balanceValue,
         timestamp: Date.now()
       })
       
-      setGameBalance(data.gameBalance)
+      setGameBalance(balanceValue)
       setLastUpdated(new Date(data.lastUpdated))
-      console.log('✅ Game balance fetched:', data.gameBalance)
+      console.log('✅ Game balance fetched:', balanceValue)
     } catch (error) {
       console.error('Error fetching game balance:', error)
       toast({
