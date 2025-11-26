@@ -13,6 +13,9 @@
     "db:migrate": "npx prisma migrate dev",
     "db:reset": "npx prisma migrate reset",
     "db:studio": "npx prisma studio",
+    "db:profile": "npx tsx scripts/perf/db-profiler.ts",
+    "db:profile:baseline": "npx tsx scripts/perf/db-profiler.ts --baseline",
+    "db:profile:compare": "npx tsx scripts/perf/db-profiler.ts --compare",
     "contract:compile": "cd blockchain && npm run compile",
     "contract:deploy": "cd blockchain && npm run deploy",
     "contract:verify": "cd blockchain && npm run verify"
