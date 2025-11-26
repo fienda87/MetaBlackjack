@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { z } from 'zod'
+import { validateRequest } from '@/lib/validation-schemas'
+
+// Store purchase validation schema
+const StorePurchaseSchema = z.object({
+  fromCurrency: z.string().min(1, 'From currency is required'),
+  toCurrency: z.string().min(1, 'To currency is required'),
+  amount: z.number().positive('Amount must be positive'),
+  fromAmount: z.number().optional()
+})
 
 export async function POST(request: NextRequest) {
   try {
-    const { fromCurrency, toCurrency, amount, fromAmount } = await request.json()
+    const body = await request.json()
+    
+    // 🚀 Phase 3: Zod validation
+    const validation = validateRequest(StorePurchaseSchema, body)
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.errors },
+        { status: 400 }
+      )
+    }
+    
+    const { fromCurrency, toCurrency, amount, fromAmount } = validation.data
     
     // For demo purposes, use the first available user or create one
     let user = await db.user.findFirst()
@@ -18,11 +39,6 @@ export async function POST(request: NextRequest) {
       })
     }
     const userId = user.id
-    
-    // Validate input
-    if (!fromCurrency || !toCurrency || !amount || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid purchase parameters' }, { status: 400 })
-    }
 
     // Get current prices
     const prices = await db.cryptoPrice.findMany()

@@ -1,7 +1,8 @@
-// server.ts - Next.js Standalone + Socket.IO + Redis + Blockchain Listeners
+// server.ts - Next.js Standalone + Socket.IO + Redis + Blockchain Listeners + BullMQ Workers
 import { setupSocket } from './src/lib/socket';
 import { setSocketInstance } from './src/lib/socket-instance';
 import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis';
+import { initQueue, initWorker, getQueueStats } from './src/lib/queue';
 import { initBlockchainListeners } from './blockchain/listeners';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { Server } from 'socket.io';
@@ -84,12 +85,24 @@ async function createCustomServer() {
           const stats = await getCacheStats();
           console.log(`> Redis: ✅ Connected (${stats.totalKeys} keys, ${stats.memory || 'N/A'})`);
           console.log(`> Cache: Hit rate ${stats.hitRate}% (target: >80%)`);
+
+          // Initialize BullMQ queue and worker (requires Redis)
+          try {
+            await initQueue();
+            await initWorker();
+            const queueStats = await getQueueStats();
+            console.log(`> Queue: ✅ Initialized (${queueStats.waiting} waiting, ${queueStats.active} active)`);
+          } catch (error) {
+            console.error('> Queue: ⚠️  Failed to initialize:', error);
+          }
         } else {
           console.log(`> Redis: ⚠️  Not available (using in-memory cache)`);
           console.log(`> Cache: Install Redis for better performance (optional)`);
+          console.log(`> Queue: ⚠️  Disabled (requires Redis)`);
         }
       } catch {
         console.log(`> Redis: ⚠️  Not available (using in-memory cache)`);
+        console.log(`> Queue: ⚠️  Disabled (requires Redis)`);
       }
 
       // Initialize blockchain event listeners (non-blocking)

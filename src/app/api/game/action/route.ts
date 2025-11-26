@@ -5,8 +5,10 @@ import { GameEngine } from '@/domain/usecases/GameEngine'
 import { splitHand, calculateGameResult } from '@/lib/game-logic'
 import { rateLimitMiddleware } from '@/lib/rate-limit'
 import { corsMiddleware, getSecurityHeaders } from '@/lib/cors'
-import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
+import { GameActionSchema, validateRequest } from '@/lib/validation-schemas'
+import { invalidateGameCaches } from '@/lib/query-cache'
+import { enqueueJob } from '@/lib/queue'
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
@@ -81,22 +83,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 🚀 Parse request (no sanitization in dev for speed)
+    // 🚀 Phase 3: Zod validation (fast rejection of malformed requests)
     const body = await request.json()
-    const { gameId, action, userId, payload } = isDevelopment ? body : sanitizeSqlInput(body)
-
-    // 🚀 Fast validation
-    if (!gameId || !action || !userId) {
-      return NextResponse.json({ error: 'Missing required fields: gameId, action, userId' }, { status: 400 })
+    const validation = validateRequest(GameActionSchema, body)
+    
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.errors },
+        { status: 400, headers: cors.headers }
+      )
     }
+
+    const { gameId, action, userId, payload } = validation.data
 
     if (!isDevelopment && decodedToken && decodedToken.userId !== userId) {
       return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 })
-    }
-
-    const validActions = ['hit', 'stand', 'double_down', 'insurance', 'split', 'surrender', 'split_hit', 'split_stand', 'set_ace_value']
-    if (!validActions.includes(action)) {
-      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
 
     // 🚀 PARALLEL: Get game and user simultaneously
@@ -446,7 +447,7 @@ export async function POST(request: NextRequest) {
       }) : Promise.resolve()
     ])
 
-    // 🚀 FIRE-AND-FORGET: Non-critical records (move, transaction, session stats)
+    // 🚀 Phase 3: FIRE-AND-FORGET - GameMove creation (non-critical)
     db.gameMove.create({
       data: {
         gameId,
@@ -464,22 +465,32 @@ export async function POST(request: NextRequest) {
     }).catch(err => console.error('GameMove creation failed:', err))
 
     if (finalGameState === 'ENDED') {
-      db.transaction.create({
-        data: {
-          userId,
-          type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
-          amount: Math.abs(netProfit),
-          description: `Game ${result.toLowerCase()} - Blackjack`,
-          balanceBefore: user.balance,
-          balanceAfter: newBalance,
-          status: 'COMPLETED',
-          referenceId: gameId
-        }
-      }).catch(err => console.error('Transaction creation failed:', err))
+      // 🚀 Phase 3: Enqueue transaction creation (offload to worker)
+      enqueueJob('transaction:create', {
+        userId,
+        type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
+        amount: Math.abs(netProfit),
+        description: `Game ${result.toLowerCase()} - Blackjack`,
+        balanceBefore: user.balance,
+        balanceAfter: newBalance,
+        status: 'COMPLETED',
+        referenceId: gameId
+      }).catch(err => console.error('Transaction enqueue failed:', err))
       
       if (game.sessionId) {
         updateSessionStatsAction(game.sessionId, { result }, updatedGame.currentBet, netProfit)
       }
+
+      // 🚀 Phase 3: Invalidate caches for ended game
+      invalidateGameCaches(gameId, userId).catch(err => 
+        console.error('Cache invalidation failed:', err)
+      )
+
+      // 🚀 Phase 3: Enqueue stats recomputation (async)
+      enqueueJob('stats:recompute', {
+        userId,
+        trigger: 'game:ended'
+      }).catch(err => console.error('Stats recompute enqueue failed:', err))
     }
 
     // Return updated game state

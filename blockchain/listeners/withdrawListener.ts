@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { db } from '@/lib/db';
+import { enqueueJob } from '@/lib/queue';
 import { 
   createProvider, 
   CONTRACT_ADDRESSES, 
@@ -127,26 +128,25 @@ export class WithdrawListener {
   }
 
   /**
-   * Process withdrawal: call internal API with retry logic
+   * Process withdrawal: enqueue job for async processing (Phase 3)
    */
   private async processWithdraw(event: WithdrawEvent): Promise<ProcessedTransaction | null> {
     const walletAddress = normalizeAddress(event.player);
     const withdrawAmount = formatGBC(event.amount);
 
-    // Try API first with retry logic
-    const apiResult = await this.callProcessingAPI({
-      walletAddress,
-      amount: withdrawAmount,
+    // 🚀 Phase 3: Enqueue withdrawal processing job (non-blocking)
+    const enqueued = await enqueueJob('blockchain:withdraw', {
+      player: walletAddress,
+      amount: withdrawAmount.toString(),
       txHash: event.transactionHash,
       blockNumber: event.blockNumber,
-      timestamp: event.blockTimestamp,
-      nonce: Number(event.nonce),
+      timestamp: event.blockTimestamp
     });
 
-    if (apiResult) {
-      console.log(`💸 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
+    if (enqueued) {
+      console.log(`📋 Withdrawal job enqueued for ${walletAddress}: ${withdrawAmount} GBC`);
       
-      // Emit Socket.IO events directly from listener
+      // Emit Socket.IO events immediately (optimistic update)
       if (this.io) {
         const eventData = {
           walletAddress: walletAddress.toLowerCase(),
@@ -157,31 +157,23 @@ export class WithdrawListener {
         }
         this.io.emit('blockchain:balance-updated', eventData)
         console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
-        
-        const balanceData = {
-          walletAddress: walletAddress.toLowerCase(),
-          gameBalance: apiResult.data.balanceAfter.toString(),
-          timestamp: Date.now()
-        }
-        this.io.emit('game:balance-updated', balanceData)
-        console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${apiResult.data.balanceAfter} GBC`)
       }
       
       return {
         txHash: event.transactionHash,
-        userId: apiResult.data.userId,
+        userId: 'pending', // Will be resolved by worker
         type: 'WITHDRAWAL',
         amount: withdrawAmount,
-        balanceBefore: apiResult.data.balanceBefore,
-        balanceAfter: apiResult.data.balanceAfter,
-        status: 'COMPLETED',
+        balanceBefore: 0, // Will be resolved by worker
+        balanceAfter: 0, // Will be resolved by worker
+        status: 'PENDING',
         blockNumber: event.blockNumber,
         timestamp: new Date(event.blockTimestamp * 1000),
       };
     }
 
-    // Fallback to direct DB access if API fails
-    console.warn('⚠️  API unavailable, falling back to direct DB access');
+    // Fallback: If queue unavailable, process directly
+    console.warn('⚠️  Queue unavailable, processing withdrawal directly');
     return await this.processWithdrawDirectDB(event, walletAddress, withdrawAmount);
   }
 
