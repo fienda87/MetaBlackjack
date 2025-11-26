@@ -68,12 +68,42 @@ export class PrismaGameRepository implements IGameRepository {
   }
 
   async getPlayerGames(playerId: string, limit = 50): Promise<Game[]> {
+    // 🚀 Phase 1: Cap limit at 100 for safety and use explicit select
+    const safeLimit = Math.min(limit, 100)
+    
     const dbGames = await db.game.findMany({
       where: { playerId },
       orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: {
+      take: safeLimit,
+      select: {
+        id: true,
+        playerId: true,
+        betAmount: true,
+        insuranceBet: true,
+        currentBet: true,
+        state: true,
+        playerHand: true,
+        dealerHand: true,
+        splitHands: true,
+        deck: true,
+        gameStats: true,
+        result: true,
+        winAmount: true,
+        insuranceWin: true,
+        netProfit: true,
+        hasSplit: true,
+        hasSurrendered: true,
+        hasInsurance: true,
+        createdAt: true,
+        updatedAt: true,
+        endedAt: true,
         moves: {
+          select: {
+            id: true,
+            moveType: true,
+            payload: true,
+            timestamp: true
+          },
           orderBy: { timestamp: 'asc' }
         }
       }

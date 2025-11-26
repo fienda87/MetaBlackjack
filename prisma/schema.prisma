@@ -93,6 +93,7 @@ model Game {
   @@index([sessionId]) // Fast session lookups
   @@index([state, createdAt]) // Fast active games queries
   @@index([result, createdAt]) // Fast result-based analytics
+  @@index([playerId, state, createdAt]) // Fast player + state queries (Phase 1)
   @@map("games")
 }
 
@@ -192,6 +193,7 @@ model Transaction {
   @@index([userId, type, createdAt]) // Fast filtered transaction queries
   @@index([referenceId]) // Fast game transaction lookup
   @@index([status, createdAt]) // Fast pending transaction queries
+  @@index([userId, status, createdAt]) // Fast user status-filtered queries (Phase 1)
   @@map("transactions")
 }
 

@@ -116,12 +116,31 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Get updated user data
+    // 🚀 Phase 1: Get updated user data with explicit select
     const updatedUser = await db.user.findUnique({
       where: { id: userId },
-      include: {
-        wallets: true,
+      select: {
+        id: true,
+        username: true,
+        walletAddress: true,
+        balance: true,
+        wallets: {
+          select: {
+            id: true,
+            currency: true,
+            balance: true,
+            address: true
+          }
+        },
         transactions: {
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            description: true,
+            status: true,
+            createdAt: true
+          },
           orderBy: { createdAt: 'desc' },
           take: 10
         }
@@ -150,11 +169,30 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
-    // For demo purposes, use the first available user or create one
+    // 🚀 Phase 1: Use explicit select to reduce over-fetching
     let user = await db.user.findFirst({
-      include: {
-        wallets: true,
+      select: {
+        id: true,
+        username: true,
+        walletAddress: true,
+        balance: true,
+        wallets: {
+          select: {
+            id: true,
+            currency: true,
+            balance: true,
+            address: true
+          }
+        },
         transactions: {
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            description: true,
+            status: true,
+            createdAt: true
+          },
           orderBy: { createdAt: 'desc' },
           take: 20
         }
@@ -169,9 +207,28 @@ export async function GET() {
           username: 'Player One',
           balance: 1000
         },
-        include: {
-          wallets: true,
+        select: {
+          id: true,
+          username: true,
+          walletAddress: true,
+          balance: true,
+          wallets: {
+            select: {
+              id: true,
+              currency: true,
+              balance: true,
+              address: true
+            }
+          },
           transactions: {
+            select: {
+              id: true,
+              type: true,
+              amount: true,
+              description: true,
+              status: true,
+              createdAt: true
+            },
             orderBy: { createdAt: 'desc' },
             take: 20
           }

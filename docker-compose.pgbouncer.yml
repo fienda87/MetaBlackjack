@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # PgBouncer connection pooler for PostgreSQL
+  # Sits between application and database to manage connections efficiently
+  pgbouncer:
+    image: edoburu/pgbouncer:1.21.0
+    container_name: blackjack-pgbouncer
+    environment:
+      # Database connection
+      DB_HOST: ${DB_HOST:-localhost}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-database}
+      DB_USER: ${DB_USER:-user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      
+      # PgBouncer settings
+      POOL_MODE: transaction              # transaction | session | statement
+      MAX_CLIENT_CONN: 100                # Max client connections
+      DEFAULT_POOL_SIZE: 20               # Pool size per user/database
+      MIN_POOL_SIZE: 5                    # Minimum pool size
+      RESERVE_POOL_SIZE: 5                # Reserve pool for emergencies
+      RESERVE_POOL_TIMEOUT: 5             # Seconds
+      MAX_DB_CONNECTIONS: 50              # Max connections to actual database
+      MAX_USER_CONNECTIONS: 50            # Max per user
+      
+      # Timeouts
+      SERVER_IDLE_TIMEOUT: 600            # 10 minutes
+      SERVER_LIFETIME: 3600               # 1 hour
+      SERVER_CONNECT_TIMEOUT: 15          # 15 seconds
+      QUERY_TIMEOUT: 0                    # 0 = disabled
+      QUERY_WAIT_TIMEOUT: 120             # 2 minutes
+      CLIENT_IDLE_TIMEOUT: 0              # 0 = disabled
+      IDLE_TRANSACTION_TIMEOUT: 0         # 0 = disabled
+      
+      # Logging
+      LOG_CONNECTIONS: 1
+      LOG_DISCONNECTIONS: 1
+      LOG_POOLER_ERRORS: 1
+      VERBOSE: 0
+      
+      # Stats
+      STATS_PERIOD: 60                    # Stats update interval in seconds
+      
+    ports:
+      - "6543:5432"                       # Expose PgBouncer on port 6543
+    
+    restart: unless-stopped
+    
+    networks:
+      - blackjack-network
+    
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: PostgreSQL database (if not using external DB)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: blackjack-postgres
+  #   environment:
+  #     POSTGRES_DB: ${DB_NAME:-database}
+  #     POSTGRES_USER: ${DB_USER:-user}
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - blackjack-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-user}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  blackjack-network:
+    driver: bridge
+
+# volumes:
+#   postgres-data:

@@ -199,9 +199,13 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
 
 /**
  * Get player's withdrawal history
+ * 🚀 Phase 1: Now uses explicit limit, can be extended with pagination params
  */
-async function getWithdrawalHistory(playerAddress: string) {
+async function getWithdrawalHistory(playerAddress: string, limit = 50) {
   const { db } = await import('@/lib/db')
+  
+  // Cap limit at 100 for safety
+  const safeLimit = Math.min(limit, 100)
   
   return await db.transaction.findMany({
     where: { 
@@ -210,7 +214,7 @@ async function getWithdrawalHistory(playerAddress: string) {
       status: 'COMPLETED',
     },
     orderBy: { createdAt: 'desc' },
-    take: 50,
+    take: safeLimit,
     select: {
       id: true,
       amount: true,

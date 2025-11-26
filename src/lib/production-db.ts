@@ -13,11 +13,14 @@ class ProductionDatabase {
   }
 
   constructor() {
+    // 🚀 Use pooled connection for production (PgBouncer support)
+    const databaseUrl = process.env.DATABASE_POOL_URL || process.env.DATABASE_URL
+    
     this.client = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
       datasources: {
         db: {
-          url: process.env.DATABASE_URL
+          url: databaseUrl
         }
       }
     })
