@@ -49,6 +49,7 @@ export default function WalletConnection() {
       }, 1500)
       return () => clearTimeout(timer)
     }
+    return undefined
   }, [isConnected, isCorrectNetwork, address, router])
 
   const handleConnect = async () => {

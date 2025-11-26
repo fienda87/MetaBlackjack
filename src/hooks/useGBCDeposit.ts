@@ -117,7 +117,7 @@ export function useGBCDeposit(address?: Address) {
   const depositWithApproval = async (amount: string) => {
     // Check if approval is needed
     const amountWei = parseEther(amount);
-    const currentAllowance = allowance ? BigInt(allowance) : BigInt(0);
+    const currentAllowance = allowance ? BigInt(allowance as bigint) : BigInt(0);
 
     if (currentAllowance < amountWei) {
       // Need to approve first
@@ -141,8 +141,8 @@ export function useGBCDeposit(address?: Address) {
     : '0.00';
 
   // Check if needs approval
-  const needsApproval = allowance 
-    ? allowance < parseEther('100000') // Always maintain allowance
+  const needsApproval = allowance
+    ? (allowance as bigint) < parseEther('100000') // Always maintain allowance
     : true;
 
   return {

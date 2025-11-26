@@ -1,3 +1,6 @@
+// NOTE: This hook requires 'swr' package to be installed
+// Commented out because it's not currently used and swr is not a dependency
+/*
 import useSWR, { SWRConfiguration, SWRResponse } from 'swr';
 
 // Default fetcher
@@ -24,3 +27,7 @@ export function useSWROptimized<Data = any, Error = any>(
     ...options,
   });
 }
+*/
+
+// Placeholder export to avoid empty module errors
+export const placeholder = true;

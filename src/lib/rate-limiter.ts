@@ -76,10 +76,10 @@ export function createRateLimiter(options: {
         )),
         json: (data: any) => resolve(NextResponse.json(data)),
         setHeader: () => {},
-      } as any);
+      } as any, () => resolve(NextResponse.next()));
     });
 
-    return response;
+    return response as any;
   };
 }
 

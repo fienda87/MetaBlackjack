@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['@/components/ui'], // Optimize UI component imports
   },
   
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     // Fix MetaMask SDK async-storage issue for web
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -22,7 +22,59 @@ const nextConfig: NextConfig = {
       'react-native': false,
     };
     
-    // Enable proper hot module replacement
+    // Client-side bundle optimization
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            // Split vendor libraries
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              priority: 10,
+              reuseExistingChunk: true,
+            },
+            // Split Redux Toolkit & React-Redux
+            redux: {
+              test: /[\\/]node_modules[\\/](@reduxjs|react-redux|reselect)[\\/]/,
+              name: 'redux',
+              priority: 20,
+              reuseExistingChunk: true,
+            },
+            // Split Socket.IO client
+            socket: {
+              test: /[\\/]node_modules[\\/](socket\.io-client)[\\/]/,
+              name: 'socket',
+              priority: 20,
+              reuseExistingChunk: true,
+            },
+            // Split Wagmi & Viem (Web3 libraries)
+            web3: {
+              test: /[\\/]node_modules[\\/](wagmi|viem|@tanstack)[\\/]/,
+              name: 'web3',
+              priority: 20,
+              reuseExistingChunk: true,
+            },
+            // Split UI components (shadcn/radix)
+            ui: {
+              test: /[\\/]node_modules[\\/](@radix-ui)[\\/]/,
+              name: 'ui',
+              priority: 15,
+              reuseExistingChunk: true,
+            },
+            // Common chunks
+            common: {
+              minChunks: 2,
+              priority: 5,
+              reuseExistingChunk: true,
+            },
+          },
+        },
+      };
+    }
+    
     return config;
   },
   

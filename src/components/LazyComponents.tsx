@@ -15,10 +15,12 @@ const ComponentLoader = () => (
 
 // Lazy loaded components
 export const LazyGameHistory = lazy(() => import('@/components/GameHistory'))
+export const LazyGameHistoryStats = lazy(() => import('@/components/GameHistoryStats'))
 export const LazyRulesGuide = lazy(() => import('@/components/RulesGuide'))
 export const LazySettings = lazy(() => import('@/components/Settings'))
 export const LazyWallet = lazy(() => import('@/components/Wallet'))
 export const LazyStoreView = lazy(() => import('@/components/StoreView'))
+export const LazyAdminPanel = lazy(() => import('@/components/AdminPanel'))
 
 // Wrapper components with Suspense
 export const SuspenseGameHistory = () => (
@@ -48,5 +50,11 @@ export const SuspenseWallet = (props: any) => (
 export const SuspenseStoreView = (props: any) => (
   <Suspense fallback={<ComponentLoader />}>
     <LazyStoreView {...props} />
+  </Suspense>
+)
+
+export const SuspenseAdminPanel = () => (
+  <Suspense fallback={<ComponentLoader />}>
+    <LazyAdminPanel />
   </Suspense>
 )

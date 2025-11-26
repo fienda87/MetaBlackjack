@@ -369,30 +369,37 @@ export const setupSocket = (io: Server) => {
           }).catch(err => console.error('[SOCKET] Transaction creation failed:', err));
         }
         
-        // 🚀 Send instant response
-        socket.emit('game:updated', {
+        // 🚀 Send delta update (only changed data for reduced payload)
+        const deltaUpdate: any = {
           success: true,
-          game: {
-            id: game.id,
-            playerId: game.playerId,
-            betAmount: game.betAmount,
-            currentBet: game.currentBet,
+          gameId: game.id,
+          delta: {
             state: finalGameState,
-            playerHand: newPlayerHand,
-            dealerHand: {
-              cards: finalGameState === 'ENDED' ? newDealerHand.cards : [dealerCards[0]],
-              value: finalGameState === 'ENDED' ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
-              isBust: newDealerHand.isBust,
-              isBlackjack: newDealerHand.isBlackjack
+            playerHand: {
+              cards: newPlayerHand.cards,
+              value: newPlayerHand.value,
+              isBust: newPlayerHand.isBust,
+              isBlackjack: newPlayerHand.isBlackjack,
             },
-            result,
-            netProfit,
-            createdAt: game.createdAt
           },
-          userBalance: newBalance,
-          processingTime: Date.now() - startTime,
-          timestamp: Date.now()
-        });
+          timestamp: Date.now(),
+        }
+        
+        // Only send dealer hand updates when game ends
+        if (finalGameState === 'ENDED') {
+          deltaUpdate.delta.dealerHand = {
+            cards: newDealerHand.cards,
+            value: newDealerHand.value,
+            isBust: newDealerHand.isBust,
+            isBlackjack: newDealerHand.isBlackjack,
+          }
+          deltaUpdate.delta.result = result
+          deltaUpdate.delta.netProfit = netProfit
+          deltaUpdate.balanceDelta = newBalance - user.balance
+          deltaUpdate.newBalance = newBalance
+        }
+        
+        socket.emit('game:updated', deltaUpdate);
         
       } catch (error) {
         socket.emit('game:error', {

@@ -74,7 +74,7 @@ export function buildCursorPaginationResponse<T extends { id: string }>(
   limit: number
 ): CursorPaginationResult<T> {
   const hasMore = data.length === limit
-  const nextCursor = hasMore && data.length > 0 ? data[data.length - 1].id : undefined
+  const nextCursor = hasMore && data.length > 0 ? data[data.length - 1]?.id : undefined
 
   return {
     data,

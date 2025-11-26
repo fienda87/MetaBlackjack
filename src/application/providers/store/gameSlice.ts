@@ -129,9 +129,52 @@ const gameSlice = createSlice({
       state.isLoading = action.payload
     },
     
-    // NEW: Update game from WebSocket response
+    // NEW: Update game from WebSocket response (handles delta updates)
     updateFromSocket: (state, action: PayloadAction<any>) => {
       state.isLoading = false
+      
+      // Handle delta updates (Phase 4 optimization)
+      if (action.payload?.delta && state.currentGame) {
+        console.log('[REDUX] Applying delta update:', action.payload.delta)
+        
+        // Merge delta with current game state
+        const delta = action.payload.delta
+        
+        if (delta.state) {
+          state.currentGame.state = delta.state
+        }
+        
+        if (delta.playerHand) {
+          state.currentGame.playerHand = {
+            ...state.currentGame.playerHand,
+            ...delta.playerHand
+          } as any
+        }
+        
+        if (delta.dealerHand) {
+          state.currentGame.dealerHand = {
+            ...state.currentGame.dealerHand,
+            ...delta.dealerHand
+          } as any
+        }
+        
+        if (delta.result) {
+          state.currentGame.result = delta.result
+        }
+        
+        if (delta.netProfit !== undefined) {
+          state.currentGame.netProfit = delta.netProfit
+        }
+        
+        // Update balance if provided
+        if (action.payload.newBalance !== undefined) {
+          state.balance = action.payload.newBalance
+        }
+        
+        return
+      }
+      
+      // Handle full game update (legacy/fallback)
       if (action.payload?.game) {
         console.log('[REDUX] Updating game from WebSocket:', {
           playerHandCards: action.payload.game.playerHand?.cards?.length,

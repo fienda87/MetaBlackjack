@@ -190,7 +190,7 @@ export async function getPrecomputedStats(userId: string): Promise<PrecomputedUs
     });
 
     if (config && config.value) {
-      const stats = config.value as PrecomputedUserStats;
+      const stats = config.value as unknown as PrecomputedUserStats;
       
       // Cache for next time
       await setCachedQuery(cacheKey, stats, QUERY_CACHE_TTL.USER_STATS);
