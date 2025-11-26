@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIP } from './request-utils';
+import { checkRateLimit } from './redis';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
+  // Skip rate limiting for Socket.IO upgrade requests
+  if (request.headers.get('upgrade')?.toLowerCase() === 'websocket' ||
+      request.url.includes('/socket.io/')) {
+    return NextResponse.next();
+  }
+
   const response = NextResponse.next();
   
   // Add security headers
@@ -26,34 +33,42 @@ export function middleware(request: NextRequest) {
     response.headers.set('Access-Control-Max-Age', '86400');
   }
 
-  // Rate limiting check
+  // 🚀 Phase 2: Tiered rate limiting
+  // Anonymous: 100 req/min, Authenticated: 1000 req/min
   const clientIP = getClientIP(request);
-  // Rate limiting temporarily disabled
-  const rateLimitResult = { allowed: true, remaining: 100, resetTime: Date.now() + 60000 };
+  const authToken = request.headers.get('authorization') || request.cookies.get('auth-token')?.value;
+  const isAuthenticated = !!authToken;
+  
+  // Determine rate limit based on authentication
+  const maxRequests = isAuthenticated ? 1000 : 100;
+  const identifier = isAuthenticated ? `auth:${authToken}` : `ip:${clientIP}`;
+  
+  const rateLimitResult = await checkRateLimit(identifier, maxRequests, 60);
   
   if (!rateLimitResult.allowed) {
+    const retryAfter = Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000);
     return new NextResponse(
       JSON.stringify({
         error: 'Rate limit exceeded',
-        retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
+        retryAfter
       }),
       {
         status: 429,
         headers: {
           'Content-Type': 'application/json',
-          'X-RateLimit-Limit': '100',
+          'X-RateLimit-Limit': maxRequests.toString(),
           'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
-          'X-RateLimit-Reset': rateLimitResult.resetTime.toString(),
-          'Retry-After': Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000).toString(),
+          'X-RateLimit-Reset': new Date(rateLimitResult.resetAt).toISOString(),
+          'Retry-After': retryAfter.toString(),
         }
       }
     );
   }
 
   // Add rate limit headers to successful responses
-  response.headers.set('X-RateLimit-Limit', '100');
+  response.headers.set('X-RateLimit-Limit', maxRequests.toString());
   response.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
-  response.headers.set('X-RateLimit-Reset', rateLimitResult.resetTime.toString());
+  response.headers.set('X-RateLimit-Reset', new Date(rateLimitResult.resetAt).toISOString());
 
   // Request size validation
   const contentLength = request.headers.get('content-length');

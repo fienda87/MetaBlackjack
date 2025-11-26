@@ -540,9 +540,9 @@ export default function StoreView() {
   useEffect(() => {
     if (!address) return
 
-    // Import socket dynamically
-    import('@/hooks/useSocket').then(({ io }) => {
-      if (!io) return
+    // Import socket.io client dynamically
+    import('socket.io-client').then(({ io }) => {
+      const socket = io()
 
       // Listen for blockchain balance updates (wallet balance)
       const handleBlockchainUpdate = (data: any) => {
@@ -565,13 +565,14 @@ export default function StoreView() {
         }
       }
 
-      io.on('blockchain:balance-updated', handleBlockchainUpdate)
-      io.on('game:balance-updated', handleGameBalanceUpdate)
+      socket.on('blockchain:balance-updated', handleBlockchainUpdate)
+      socket.on('game:balance-updated', handleGameBalanceUpdate)
 
       // Cleanup
       return () => {
-        io.off('blockchain:balance-updated', handleBlockchainUpdate)
-        io.off('game:balance-updated', handleGameBalanceUpdate)
+        socket.off('blockchain:balance-updated', handleBlockchainUpdate)
+        socket.off('game:balance-updated', handleGameBalanceUpdate)
+        socket.disconnect()
       }
     })
   }, [address, syncBothBalances, fetchGameBalance])

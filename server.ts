@@ -3,9 +3,10 @@ import { setupSocket } from './src/lib/socket';
 import { setSocketInstance } from './src/lib/socket-instance';
 import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis';
 import { initBlockchainListeners } from './blockchain/listeners';
-import { createServer } from 'http';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';
+import compression from 'compression';
 
 const dev = process.env.NODE_ENV !== 'production';
 const currentPort = 3000;
@@ -25,13 +26,32 @@ async function createCustomServer() {
     await nextApp.prepare();
     const handle = nextApp.getRequestHandler();
 
+    // Setup compression middleware (typed for Node.js HTTP server)
+    const compressionMiddleware = compression({
+      threshold: 1024, // Only compress responses > 1KB
+      level: 6, // Balanced compression level (0-9)
+      filter: (req: IncomingMessage, res: ServerResponse) => {
+        // Don't compress Server-Sent Events or Socket.IO
+        if (req.url?.startsWith('/socket.io')) {
+          return false;
+        }
+        // Compress everything else
+        return true;
+      }
+    });
+
     // Create HTTP server that will handle both Next.js and Socket.IO
     const server = createServer((req, res) => {
-      // Let Socket.IO handle its own requests
+      // Let Socket.IO handle its own requests (no compression)
       if (req.url?.startsWith('/socket.io')) {
         return;
       }
-      handle(req, res);
+      
+      // Apply compression middleware for all other requests
+      // Type cast needed because compression expects Express-style req/res
+      compressionMiddleware(req as any, res as any, () => {
+        handle(req, res);
+      });
     });
 
     // Setup Socket.IO with correct path

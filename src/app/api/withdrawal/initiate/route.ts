@@ -101,11 +101,14 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/withdrawal/initiate
- * Get withdrawal history and status
+ * Get withdrawal history and status with cursor pagination
  */
 export async function GET(request: NextRequest) {
   try {
-    const playerAddress = request.nextUrl.searchParams.get('playerAddress')
+    const { nextUrl } = request
+    const playerAddress = nextUrl.searchParams.get('playerAddress')
+    const limit = Math.min(parseInt(nextUrl.searchParams.get('limit') || '20'), 100)
+    const cursor = nextUrl.searchParams.get('cursor') || undefined
     
     if (!playerAddress) {
       return NextResponse.json(
@@ -122,13 +125,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get withdrawal history from database
-    const history = await getWithdrawalHistory(playerAddress)
+    // Get withdrawal history from database with cursor pagination
+    const history = await getWithdrawalHistory(playerAddress, limit, cursor)
+
+    // Build cursor pagination response
+    const { buildCursorPaginationResponse } = await import('@/lib/pagination')
+    const paginationData = buildCursorPaginationResponse(history, limit)
 
     return NextResponse.json({
       playerAddress,
-      withdrawals: history,
+      withdrawals: paginationData.data,
       totalWithdrawn: history.reduce((sum: number, w: any) => sum + parseFloat(w.amount), 0),
+      pagination: paginationData.pagination
     })
   } catch (error) {
     console.error('Get withdrawal history error:', error)
@@ -199,9 +207,9 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
 
 /**
  * Get player's withdrawal history
- * 🚀 Phase 1: Now uses explicit limit, can be extended with pagination params
+ * 🚀 Phase 2: Cursor-based pagination support
  */
-async function getWithdrawalHistory(playerAddress: string, limit = 50) {
+async function getWithdrawalHistory(playerAddress: string, limit = 50, cursor?: string) {
   const { db } = await import('@/lib/db')
   
   // Cap limit at 100 for safety
@@ -214,7 +222,7 @@ async function getWithdrawalHistory(playerAddress: string, limit = 50) {
       status: 'COMPLETED',
     },
     orderBy: { createdAt: 'desc' },
-    take: safeLimit,
+    ...(cursor ? { take: safeLimit, skip: 1, cursor: { id: cursor } } : { take: safeLimit }),
     select: {
       id: true,
       amount: true,

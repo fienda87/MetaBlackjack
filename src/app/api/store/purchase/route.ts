@@ -167,9 +167,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // 🚀 Phase 1: Use explicit select to reduce over-fetching
+    // 🚀 Phase 1 & 2: Use explicit select + cache response
+    const { createCachedResponse, CACHE_PRESETS } = await import('@/lib/http-cache')
+    
     let user = await db.user.findFirst({
       select: {
         id: true,
@@ -236,7 +238,11 @@ export async function GET() {
       })
     }
 
-    return NextResponse.json({ user })
+    // 🚀 Phase 2: Return cached response with short TTL
+    return createCachedResponse({ user }, request, {
+      preset: CACHE_PRESETS.SHORT,
+      vary: ['Authorization']
+    })
   } catch (error) {
     console.error('Error fetching user data:', error)
     return NextResponse.json({ error: 'Failed to fetch user data' }, { status: 500 })
