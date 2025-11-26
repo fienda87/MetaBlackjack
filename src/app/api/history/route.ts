@@ -1,18 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { parsePaginationParams, buildCursorPaginationResponse, buildPrismaCursorParams } from '@/lib/pagination'
+import { createCachedResponse, CACHE_PRESETS } from '@/lib/http-cache'
 
 export async function GET(request: NextRequest) {
   try {
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50) // Cap at 50
+    const { limit, cursor } = parsePaginationParams(searchParams)
     const resultFilter = searchParams.get('resultFilter') || 'all'
-    const offset = (page - 1) * limit
 
     if (!userId) {
-      return NextResponse.json({ games: [], sessions: [], overallStats: { totalHands: 0, totalBet: 0, totalWin: 0, netProfit: 0, winRate: 0, blackjacks: 0, busts: 0 }, pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } })
+      return NextResponse.json({ 
+        games: [], 
+        sessions: [], 
+        overallStats: { 
+          totalHands: 0, 
+          totalBet: 0, 
+          totalWin: 0, 
+          netProfit: 0, 
+          winRate: 0, 
+          blackjacks: 0, 
+          busts: 0 
+        }, 
+        pagination: { 
+          limit, 
+          nextCursor: undefined, 
+          hasMore: false 
+        } 
+      })
     }
     
     // Build where clause
@@ -21,29 +38,25 @@ export async function GET(request: NextRequest) {
       whereClause.result = resultFilter.toUpperCase()
     }
 
-    // 🚀 PARALLEL QUERIES - fetch games and count simultaneously
-    const [games, totalCount] = await Promise.all([
-      db.game.findMany({
-        where: whereClause,
-        select: {
-          id: true,
-          createdAt: true,
-          betAmount: true,
-          result: true,
-          winAmount: true,
-          netProfit: true,
-          playerHand: true,
-          dealerHand: true,
-          sessionId: true
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
-      }),
-      db.game.count({ where: whereClause })
-    ])
+    // 🚀 Phase 2: Cursor-based pagination for better performance
+    const games = await db.game.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        createdAt: true,
+        betAmount: true,
+        result: true,
+        winAmount: true,
+        netProfit: true,
+        playerHand: true,
+        dealerHand: true,
+        sessionId: true
+      },
+      orderBy: { createdAt: 'desc' },
+      ...(cursor ? { take: limit, skip: 1, cursor: { id: cursor } } : { take: limit })
+    })
 
-    // 🚀 Minimal formatting - let client handle date formatting
+    // 🚀 Phase 2: Lean payload - minimal formatting
     const formattedGames = games.map(game => {
       const playerHand = game.playerHand as any
       const dealerHand = game.dealerHand as any
@@ -62,22 +75,26 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 🚀 Simplified stats - no sessions query (optional, load separately if needed)
+    // 🚀 Simplified stats - computed from current page only
     const overallStats = {
-      totalHands: totalCount,
       totalBet: formattedGames.reduce((sum, game) => sum + game.betAmount, 0),
       totalWin: formattedGames.filter(g => g.result === 'WIN' || g.result === 'BLACKJACK').reduce((sum, game) => sum + (game.winAmount || 0), 0),
       netProfit: formattedGames.reduce((sum, game) => sum + (game.netProfit || 0), 0),
-      winRate: totalCount > 0 ? (formattedGames.filter(g => g.result === 'WIN' || g.result === 'BLACKJACK').length / formattedGames.length) * 100 : 0,
+      winRate: formattedGames.length > 0 ? (formattedGames.filter(g => g.result === 'WIN' || g.result === 'BLACKJACK').length / formattedGames.length) * 100 : 0,
       blackjacks: formattedGames.filter(g => g.isBlackjack).length,
       busts: formattedGames.filter(g => g.isBust).length
     }
 
-    return NextResponse.json({ 
+    const responseData = { 
       games: formattedGames,
-      sessions: [], // Load separately for performance
       overallStats,
-      pagination: { page, limit, total: totalCount, totalPages: Math.ceil(totalCount / limit) }
+      ...buildCursorPaginationResponse(formattedGames, limit)
+    }
+
+    // 🚀 Phase 2: Return cached response with ETag
+    return createCachedResponse(responseData, request, {
+      preset: CACHE_PRESETS.MEDIUM,
+      vary: ['Authorization']
     })
   } catch (error) {
     console.error('❌ Error fetching game history:', error)

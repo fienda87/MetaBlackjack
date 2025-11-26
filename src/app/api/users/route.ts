@@ -1,41 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { parsePaginationParams, buildPaginationResponse, buildPrismaOffsetParams } from '@/lib/pagination'
+import { parsePaginationParams, buildCursorPaginationResponse, buildPrismaCursorParams } from '@/lib/pagination'
+import { createCachedResponse, CACHE_PRESETS } from '@/lib/http-cache'
 
 export async function GET(request: NextRequest) {
   try {
-    // 🚀 Phase 1: Enforce pagination on all list endpoints
+    // 🚀 Phase 2: Cursor pagination for better performance
     const { searchParams } = new URL(request.url)
-    const { page, limit } = parsePaginationParams(searchParams)
-    const { skip, take } = buildPrismaOffsetParams(page, limit)
+    const { limit, cursor } = parsePaginationParams(searchParams)
 
-    // 🚀 Parallel queries: fetch users and count simultaneously
-    const [users, total] = await Promise.all([
-      db.user.findMany({
-        select: {
-          id: true,
-          username: true,
-          walletAddress: true,
-          balance: true,
-          createdAt: true,
-          _count: {
-            select: {
-              games: true,
-              sessions: true,
-              transactions: true
-            }
+    const users = await db.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        walletAddress: true,
+        balance: true,
+        createdAt: true,
+        _count: {
+          select: {
+            games: true,
+            sessions: true,
+            transactions: true
           }
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take
-      }),
-      db.user.count()
-    ])
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      ...(cursor ? { take: limit, skip: 1, cursor: { id: cursor } } : { take: limit })
+    })
 
-    return NextResponse.json({
+    const responseData = {
       success: true,
-      ...buildPaginationResponse(users, page, limit, total)
+      ...buildCursorPaginationResponse(users, limit)
+    }
+
+    // 🚀 Phase 2: Return cached response with ETag
+    return createCachedResponse(responseData, request, {
+      preset: CACHE_PRESETS.MEDIUM,
+      vary: ['Authorization']
     })
 
   } catch (error) {

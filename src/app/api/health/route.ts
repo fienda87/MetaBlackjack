@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/production-db'
+import { CACHE_PRESETS } from '@/lib/http-cache'
 
 export async function GET(request: NextRequest) {
   try {
     const health = await db.healthCheck()
     
+    // 🚀 Phase 2: Use standardized cache headers
     return NextResponse.json(health, {
       status: health.status === 'healthy' ? 200 : 503,
       headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': CACHE_PRESETS.NO_CACHE,
         'Pragma': 'no-cache',
         'Expires': '0'
       }

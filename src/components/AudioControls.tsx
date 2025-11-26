@@ -27,19 +27,19 @@ export default function AudioControls() {
   }, [audio])
 
   const handleMasterVolumeChange = (value: number[]) => {
-    const newVolume = value[0]
+    const newVolume = value[0] ?? 0.5
     audio.updateSettings({ masterVolume: newVolume })
     setSettings({ ...settings, masterVolume: newVolume })
   }
 
   const handleMusicVolumeChange = (value: number[]) => {
-    const newVolume = value[0]
+    const newVolume = value[0] ?? 0.5
     audio.updateSettings({ musicVolume: newVolume })
     setSettings({ ...settings, musicVolume: newVolume })
   }
 
   const handleSfxVolumeChange = (value: number[]) => {
-    const newVolume = value[0]
+    const newVolume = value[0] ?? 0.5
     audio.updateSettings({ sfxVolume: newVolume })
     setSettings({ ...settings, sfxVolume: newVolume })
   }
