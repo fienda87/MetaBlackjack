@@ -183,13 +183,27 @@ export const useSocket = (playerId: string, initialBalance: number) => {
         reject(new Error('Action timeout'));
       }, 10000);
 
-      // Listen for response
+      // Listen for response (handles delta updates)
       const handleUpdate = (data: any) => {
         console.log('[CLIENT] Received game:updated', data);
         clearTimeout(timeout);
         socket.off('game:updated', handleUpdate);
         socket.off('game:error', handleError);
-        resolve(data);
+        
+        // If server sends delta update, merge with existing game state
+        if (data.delta) {
+          console.log('[CLIENT] Processing delta update:', data.delta);
+          resolve({
+            success: true,
+            delta: data.delta,
+            gameId: data.gameId,
+            balanceDelta: data.balanceDelta,
+            newBalance: data.newBalance,
+            timestamp: data.timestamp
+          });
+        } else {
+          resolve(data);
+        }
       };
 
       const handleError = (error: any) => {

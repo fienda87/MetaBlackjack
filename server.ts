@@ -55,7 +55,7 @@ async function createCustomServer() {
       });
     });
 
-    // Setup Socket.IO with correct path
+    // Setup Socket.IO with correct path and compression
     const io = new Server(server, {
       path: '/socket.io',
       cors: {
@@ -64,7 +64,21 @@ async function createCustomServer() {
         credentials: true
       },
       transports: ['websocket', 'polling'],
-      allowEIO3: true
+      allowEIO3: true,
+      // Enable WebSocket compression for reduced payload sizes
+      perMessageDeflate: {
+        threshold: 1024, // Only compress messages > 1KB
+        zlibDeflateOptions: {
+          level: 6, // Balanced compression level
+        },
+      },
+      // HTTP compression for polling transport
+      httpCompression: {
+        threshold: 1024,
+        chunkSize: 8 * 1024,
+        windowBits: 15,
+        level: 6,
+      },
     });
 
     setupSocket(io);

@@ -2,7 +2,6 @@ import { Game, Hand, Card, GameResult, GameMove, GameState } from '../entities/G
 import { IGameRepository } from '../repositories/GameRepository'
 import { 
   calculateGameResult as calculateGameResultLogic,
-  checkBonusCombinations,
   canOfferInsurance,
   calculateInsuranceBet
 } from '@/lib/game-logic'
@@ -147,11 +146,7 @@ export class GameEngine {
       result: gameResult.result,
       winAmount: gameResult.winAmount,
       insuranceWin: gameResult.insuranceWin,
-      netProfit,
-      bonusType: gameResult.bonusType,
-      bonusMultiplier: gameResult.bonusMultiplier,
-      basePayout: gameResult.basePayout,
-      totalPayout: gameResult.totalPayout
+      netProfit
     }
   }
 

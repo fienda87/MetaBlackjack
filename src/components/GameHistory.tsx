@@ -1,24 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense, lazy } from 'react'
 import { useSelector } from 'react-redux'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
-  TrendingUp, 
-  TrendingDown, 
   Calendar,
-  Coins,
-  BarChart3,
   Filter,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
 import { RootState } from '@/application/providers/store'
-// Simple imports - KISS principle
 import { formatGameResult, formatGBC, getResultColor, getResultBadgeClass } from '@/lib/ui-helpers'
+
+const GameHistoryStats = lazy(() => import('@/components/GameHistoryStats'))
 
 interface Game {
   id: string
@@ -178,74 +175,18 @@ export default function GameHistory() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card className="bg-black border border-green-500/30">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-green-400" />
-              <div>
-                <p className="text-xs text-green-300">Total Hands</p>
-                <p className="text-xl font-bold text-green-400">{displayStats.totalHands.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-black border border-green-500/30">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-green-400" />
-              <div>
-                <p className="text-xs text-green-300">Win Rate</p>
-                <p className="text-xl font-bold text-green-400">{displayStats.winRate.toFixed(1)}%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-black border border-green-500/30">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Coins className="w-5 h-5 text-green-400" />
-              <div>
-                <p className="text-xs text-green-300">Total Bet</p>
-                <p className="text-xl font-bold text-green-400">{displayStats.totalBet.toLocaleString()} GBC</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-black border border-green-500/30">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              {displayStats.netProfit >= 0 ? (
-                <TrendingUp className="w-5 h-5 text-green-400" />
-              ) : (
-                <TrendingDown className="w-5 h-5 text-red-400" />
-              )}
-              <div>
-                <p className="text-xs text-green-300">Net Profit</p>
-                <span className={`text-xl font-bold ${getResultColor(displayStats.netProfit >= 0 ? 'win' : 'lose')}`}>
-                  {formatGBC(displayStats.netProfit)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-black border border-green-500/30">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-green-400" />
-              <div>
-                <p className="text-xs text-green-300">Blackjacks</p>
-                <p className="text-xl font-bold text-green-400">{displayStats.blackjacks}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Summary Stats - Lazy Loaded */}
+      <Suspense fallback={
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <Card key={i} className="bg-black border border-green-500/30">
+              <CardContent className="p-4 h-20 animate-pulse" />
+            </Card>
+          ))}
+        </div>
+      }>
+        <GameHistoryStats stats={displayStats} />
+      </Suspense>
 
       {/* Session History */}
       <Card className="bg-black border border-green-500/30">

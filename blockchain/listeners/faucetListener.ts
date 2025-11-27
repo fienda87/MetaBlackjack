@@ -163,7 +163,7 @@ export class FaucetListener {
         amount: claimAmount,
         balanceBefore: 0, // Will be resolved by worker
         balanceAfter: 0, // Will be resolved by worker
-        status: 'PENDING',
+        status: 'COMPLETED', // Set to completed as worker will process
         blockNumber: event.blockNumber,
         timestamp: new Date(event.blockTimestamp * 1000),
       };
