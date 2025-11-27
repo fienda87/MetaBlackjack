@@ -172,29 +172,51 @@ async function getPlayerBalance(playerAddress: string) {
 async function storeUsedNonce(nonce: number, playerAddress: string) {
   const { db } = await import('@/lib/db')
   
-  // Store nonce in transaction metadata for tracking
-  // In production, you might want a dedicated table for nonces
-  await db.transaction.create({
-    data: {
-      userId: playerAddress.toLowerCase(),
-      type: 'WITHDRAWAL',
-      amount: 0, // Nonce record, not actual transaction
-      description: `Nonce ${nonce} reserved`,
-      status: 'PENDING',
-      balanceBefore: 0,
-      balanceAfter: 0,
-      metadata: {
-        nonce,
-        type: 'NONCE_RESERVATION',
-        timestamp: new Date().toISOString(),
-      }
+  try {
+    // Normalize address
+    const normalizedAddress = playerAddress.toLowerCase()
+    
+    // Find or create user first
+    let user = await db.user.findUnique({
+      where: { walletAddress: normalizedAddress },
+      select: { id: true }
+    })
+    
+    if (!user) {
+      // Create user if doesn't exist
+      user = await db.user.create({
+        data: {
+          walletAddress: normalizedAddress,
+          username: `Player ${normalizedAddress.slice(0, 6)}`,
+          balance: 0,
+        },
+        select: { id: true }
+      })
+      console.log(`✅ Created user for nonce: ${normalizedAddress}`)
     }
-  }).catch(() => {
-    // If user doesn't exist, just log it
-    console.log(`Could not store nonce for ${playerAddress}`)
-  })
-  
-  console.log(`Stored nonce ${nonce} for player ${playerAddress}`)
+    
+    // Store nonce in transaction metadata for tracking
+    await db.transaction.create({
+      data: {
+        userId: user.id, // Use user.id not walletAddress
+        type: 'WITHDRAWAL',
+        amount: 0, // Nonce record, not actual transaction
+        description: `Nonce ${nonce} reserved`,
+        status: 'PENDING',
+        balanceBefore: 0,
+        balanceAfter: 0,
+        metadata: {
+          nonce,
+          type: 'NONCE_RESERVATION',
+          timestamp: new Date().toISOString(),
+        }
+      }
+    })
+    
+    console.log(`Stored nonce ${nonce} for player ${playerAddress}`)
+  } catch (error) {
+    console.error(`Could not store nonce for ${playerAddress}:`, error)
+  }
 }
 
 /**
@@ -203,9 +225,19 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
 async function getWithdrawalHistory(playerAddress: string) {
   const { db } = await import('@/lib/db')
   
+  // Find user by wallet address first
+  const user = await db.user.findUnique({
+    where: { walletAddress: playerAddress.toLowerCase() },
+    select: { id: true }
+  })
+  
+  if (!user) {
+    return [] // No user, no history
+  }
+  
   return await db.transaction.findMany({
     where: { 
-      userId: playerAddress.toLowerCase(),
+      userId: user.id, // Use user.id not walletAddress
       type: 'WITHDRAWAL',
       status: 'COMPLETED',
     },
