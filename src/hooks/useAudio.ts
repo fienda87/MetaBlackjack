@@ -20,8 +20,6 @@ export function useAudio() {
     // Sound effects
     playButtonSound: () => audioManager.playButtonSound(),
     playCardDealSound: () => audioManager.playCardDealSound(),
-    playCardFlipSound: () => audioManager.playCardFlipSound(),
-    playChipPlaceSound: () => audioManager.playChipPlaceSound(),
     playWinSound: () => audioManager.playWinSound(),
     playLoseSound: () => audioManager.playLoseSound(),
     playBlackjackSound: () => audioManager.playBlackjackSound(),
@@ -50,14 +48,12 @@ export function withSound<T extends React.ComponentType<any>>(
   soundType: 'button' | 'chip' = 'button'
 ) {
   return function WithSoundComponent(props: React.ComponentProps<T>) {
-    const { playButtonSound, playChipPlaceSound } = useAudio()
+    const { playButtonSound } = useAudio()
     
     const handleClick = (e: React.MouseEvent) => {
       // Play sound before original handler
       if (soundType === 'button') {
         playButtonSound()
-      } else if (soundType === 'chip') {
-        playChipPlaceSound()
       }
       
       // Call original onClick if exists

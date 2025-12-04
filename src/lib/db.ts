@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { logger } from '@/lib/logger'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
@@ -27,6 +28,6 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = db
   // Set reasonable timeout for development
   db.$connect().catch(err => {
-    console.error('❌ Database connection failed:', err)
+    logger.error('Database connection failed', err)
   })
 }

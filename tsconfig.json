@@ -23,6 +23,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "tsBuildInfoFile": "./.next/cache/tsconfig.tsbuildinfo",
     "plugins": [
       {
         "name": "next"
@@ -33,5 +34,13 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "server.ts"],
-  "exclude": ["node_modules", "scripts/**/*.ts", "db/**"]
+  "exclude": [
+    "node_modules",
+    ".next",
+    "out",
+    "scripts/**/*.ts",
+    "db/**",
+    "blockchain/artifacts/**",
+    "blockchain/cache/**"
+  ]
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withInternalAuth } from '@/lib/internal-auth';
+import { invalidateCache, CACHE_KEYS } from '@/lib/cache-helper';
 import { z } from 'zod';
 
 /**
@@ -105,6 +106,10 @@ export async function POST(request: NextRequest) {
       });
 
       console.log(`✅ Deposit processed: ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
+
+      // ✅ Invalidate cache after deposit
+      await invalidateCache(`${CACHE_KEYS.BALANCE}${normalizedAddress}`);
+      await invalidateCache(`${CACHE_KEYS.USER}${normalizedAddress}`);
 
       // Note: Socket.IO emit is handled by blockchain listener, not API route
       // API routes in Next.js 15 don't share memory with custom server

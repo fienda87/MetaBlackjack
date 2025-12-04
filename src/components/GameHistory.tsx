@@ -17,7 +17,6 @@ import {
   ChevronRight
 } from 'lucide-react'
 import { RootState } from '@/application/providers/store'
-// Simple imports - KISS principle
 import { formatGameResult, formatGBC, getResultColor, getResultBadgeClass } from '@/lib/ui-helpers'
 
 interface Game {
@@ -33,27 +32,6 @@ interface Game {
   isBust: boolean
   sessionId: string
   sessionDate: string
-}
-
-interface Session {
-  id: string
-  date: string
-  startTime: string
-  endTime: string
-  hands: number
-  totalBet: number
-  totalWin: number
-  result: number
-  duration: string
-  winRate: number
-  stats: {
-    wins: number
-    losses: number
-    pushes: number
-    blackjacks: number
-    busts: number
-    totalHands: number
-  }
 }
 
 interface OverallStats {
@@ -76,7 +54,6 @@ interface Pagination {
 export default function GameHistory() {
   const { user } = useSelector((state: RootState) => state.wallet)
   const [games, setGames] = useState<Game[]>([])
-  const [sessions, setSessions] = useState<Session[]>([])
   const [overallStats, setOverallStats] = useState<OverallStats | null>(null)
   const [filteredGames, setFilteredGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,7 +80,6 @@ export default function GameHistory() {
       if (response.ok) {
         const data = await response.json()
         setGames(data.games)
-        setSessions(data.sessions)
         setOverallStats(data.overallStats)
         setPagination(data.pagination)
       }
@@ -120,11 +96,9 @@ export default function GameHistory() {
     }
   }, [user, resultFilter])
 
-  // Apply filters (client-side for immediate response, but API handles server-side)
   useEffect(() => {
     let filtered = [...games]
     
-    // Filter by result (additional client-side filtering if needed)
     if (resultFilter !== 'all') {
       filtered = filtered.filter(game => game.result.toLowerCase() === resultFilter.toLowerCase())
     }
@@ -139,7 +113,7 @@ export default function GameHistory() {
 
   const handleFilterChange = (newFilter: string) => {
     setResultFilter(newFilter)
-    setPagination(prev => ({ ...prev, page: 1 })) // Reset to first page
+    setPagination(prev => ({ ...prev, page: 1 }))
     fetchHistory(1, newFilter)
   }
 
@@ -163,7 +137,6 @@ export default function GameHistory() {
     )
   }
 
-  // Use overall stats from API
   const displayStats = overallStats || {
     totalHands: filteredGames.length,
     totalBet: filteredGames.reduce((sum, game) => sum + game.betAmount, 0),
@@ -247,68 +220,6 @@ export default function GameHistory() {
         </Card>
       </div>
 
-      {/* Session History */}
-      <Card className="bg-black border border-green-500/30">
-        <CardHeader>
-          <CardTitle className="text-green-400 flex items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            Session History
-            <Badge variant="outline" className="ml-2 text-green-400 border-green-500/50">
-              {sessions.length} sessions
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <div className="max-h-96 overflow-y-auto custom-scrollbar">
-              <table className="w-full">
-                <thead className="sticky top-0 bg-black border-b border-green-500/30">
-                  <tr>
-                    <th className="text-left p-3 text-green-300 font-semibold">Date</th>
-                    <th className="text-left p-3 text-green-300 font-semibold">Hands</th>
-                    <th className="text-left p-3 text-green-300 font-semibold">Total Bet</th>
-                    <th className="text-left p-3 text-green-300 font-semibold">Result</th>
-                    <th className="text-left p-3 text-green-300 font-semibold">Duration</th>
-                    <th className="text-left p-3 text-green-300 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((session) => (
-                    <tr 
-                      key={session.id} 
-                      className="border-b border-green-500/20 hover:bg-black/50 transition-colors"
-                    >
-                      <td className="p-3 text-green-400">{session.date}</td>
-                      <td className="p-3 text-green-400">{session.hands}</td>
-                      <td className="p-3 text-green-400">{session.totalBet.toLocaleString()} GBC</td>
-                      <td className="p-3">
-                        <span className={session.result >= 0 ? 'text-green-400' : 'text-red-400'}>
-                          {session.result >= 0 ? '+' : ''}{formatGBC(session.result)}
-                        </span>
-                      </td>
-                      <td className="p-3 text-green-400">{session.duration}</td>
-                      <td className="p-3">
-                        <div className="flex gap-1">
-                          <Badge variant="outline" className="text-xs border-green-500/50 text-green-400">
-                            W: {session.stats.wins}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs border-red-500/50 text-red-400">
-                            L: {session.stats.losses}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-400">
-                            P: {session.stats.pushes}
-                          </Badge>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Game History */}
       <Card className="bg-black border border-green-500/30">
         <CardHeader>
@@ -321,7 +232,6 @@ export default function GameHistory() {
               </Badge>
             </CardTitle>
             
-            {/* Result Filter */}
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-green-300" />
               <Select value={resultFilter} onValueChange={handleFilterChange}>
@@ -382,7 +292,6 @@ export default function GameHistory() {
             </div>
           </div>
           
-          {/* Pagination */}
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-green-500/30">
               <div className="text-sm text-green-300">

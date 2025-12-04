@@ -4,6 +4,7 @@
  */
 
 import { Server as SocketIOServer } from 'socket.io'
+import { logger } from '@/lib/logger'
 
 let socketInstance: SocketIOServer | null = null
 
@@ -12,7 +13,7 @@ let socketInstance: SocketIOServer | null = null
  */
 export function setSocketInstance(io: SocketIOServer) {
   socketInstance = io
-  console.log('✅ Socket.IO instance set for API routes')
+  logger.info('Socket.IO instance set for API routes')
 }
 
 /**
@@ -34,7 +35,7 @@ export function isSocketAvailable(): boolean {
  */
 export function emitToAll(event: string, data: any) {
   if (!socketInstance) {
-    console.warn('⚠️ Socket.IO not available, cannot emit:', event)
+    logger.warn('Socket.IO not available, cannot emit', event)
     return false
   }
   
@@ -47,7 +48,7 @@ export function emitToAll(event: string, data: any) {
  */
 export function emitToRoom(room: string, event: string, data: any) {
   if (!socketInstance) {
-    console.warn('⚠️ Socket.IO not available, cannot emit to room:', room)
+    logger.warn('Socket.IO not available, cannot emit to room', room)
     return false
   }
   
@@ -67,7 +68,7 @@ export function emitBlockchainBalanceUpdate(
 ) {
   const io = getSocketInstance()
   if (!io) {
-    console.warn('⚠️ Socket.IO not available, skipping blockchain balance update emit')
+    logger.warn('Socket.IO not available, skipping blockchain balance update emit')
     return false
   }
 
@@ -81,7 +82,7 @@ export function emitBlockchainBalanceUpdate(
 
   // Broadcast to all connected clients
   io.emit('blockchain:balance-updated', data)
-  console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}: ${type} ${amount} GBC`)
+  logger.info('Emitted blockchain:balance-updated', { walletAddress, type, amount })
   
   return true
 }
@@ -96,7 +97,7 @@ export function emitGameBalanceUpdate(
 ) {
   const io = getSocketInstance()
   if (!io) {
-    console.warn('⚠️ Socket.IO not available, skipping game balance update emit')
+    logger.warn('Socket.IO not available, skipping game balance update emit')
     return false
   }
 
@@ -108,7 +109,7 @@ export function emitGameBalanceUpdate(
 
   // Broadcast to all connected clients
   io.emit('game:balance-updated', data)
-  console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${newGameBalance} GBC`)
+  logger.info('Emitted game:balance-updated', { walletAddress, newGameBalance })
   
   return true
 }

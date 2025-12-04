@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { logger } from '@/lib/logger'
+import { getCached, invalidateCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
 /**
  * GET /api/user/wallet?address=0x...
- * Get or create user by wallet address
+ * Get or create user by wallet address (with Redis cache)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,11 +21,16 @@ export async function GET(request: NextRequest) {
 
     // Normalize address to lowercase for consistency
     const normalizedAddress = walletAddress.toLowerCase()
+    const cacheKey = `${CACHE_KEYS.USER}${normalizedAddress}`
 
-    // Try to find existing user
-    let user = await db.user.findUnique({
-      where: { walletAddress: normalizedAddress }
-    })
+    // ✅ Use cache with 5 minute TTL
+    let user = await getCached(
+      cacheKey,
+      () => db.user.findUnique({
+        where: { walletAddress: normalizedAddress }
+      }),
+      CACHE_TTL.USER
+    )
 
     // If user doesn't exist, create new one with initial balance
     if (!user) {
@@ -35,13 +42,17 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      console.log('✅ New user created:', {
+      // ✅ Invalidate cache after user creation
+      await invalidateCache(cacheKey)
+      await invalidateCache(`${CACHE_KEYS.BALANCE}${normalizedAddress}`)
+
+      logger.info('New user created', {
         address: normalizedAddress,
         username: user.username,
         balance: user.balance
       })
     } else {
-      console.log('✅ Existing user found:', {
+      logger.info('Existing user found (cached)', {
         address: normalizedAddress,
         username: user.username,
         balance: user.balance
@@ -50,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ user })
   } catch (error) {
-    console.error('❌ Error fetching/creating user by wallet:', error)
+    logger.error('Error fetching/creating user by wallet', error)
     return NextResponse.json(
       { error: 'Failed to fetch/create user' },
       { status: 500 }
@@ -89,7 +100,11 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    console.log('✅ User upserted:', {
+    // ✅ Invalidate cache after upsert
+    await invalidateCache(`${CACHE_KEYS.USER}${normalizedAddress}`)
+    await invalidateCache(`${CACHE_KEYS.BALANCE}${normalizedAddress}`)
+
+    logger.info('User upserted', {
       address: normalizedAddress,
       username: user.username,
       balance: user.balance
@@ -97,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ user })
   } catch (error) {
-    console.error('❌ Error upserting user:', error)
+    logger.error('Error upserting user', error)
     return NextResponse.json(
       { error: 'Failed to create/update user' },
       { status: 500 }

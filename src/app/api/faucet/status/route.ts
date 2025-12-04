@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid address format' }, { status: 400 })
     }
 
-    // 🚀 INSTANT RESPONSE: Static data for testing
+    //  INSTANT RESPONSE: Static data for testing
     return NextResponse.json({
       playerAddress,
       canClaim: true,

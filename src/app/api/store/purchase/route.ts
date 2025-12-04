@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
     const { fromCurrency, toCurrency, amount, fromAmount } = await request.json()
     
     // For demo purposes, use the first available user or create one
-    let user = await db.user.findFirst()
+    const users = await db.user.findMany({ take: 1, select: { id: true, walletAddress: true, username: true, balance: true } })
+    let user = users[0] || null
     if (!user) {
       // Create a demo user if none exists
       user = await db.user.create({
@@ -143,7 +145,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error processing purchase:', error)
+    logger.error('Error processing purchase', error)
     return NextResponse.json({ error: 'Failed to process purchase' }, { status: 500 })
   }
 }
@@ -151,7 +153,8 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     // For demo purposes, use the first available user or create one
-    let user = await db.user.findFirst({
+    const users = await db.user.findMany({
+      take: 1,
       include: {
         wallets: true,
         transactions: {
@@ -160,6 +163,7 @@ export async function GET() {
         }
       }
     })
+    let user = users[0] || null
     
     if (!user) {
       // Create a demo user if none exists
@@ -181,7 +185,7 @@ export async function GET() {
 
     return NextResponse.json({ user })
   } catch (error) {
-    console.error('Error fetching user data:', error)
+    logger.error('Error fetching user data', error)
     return NextResponse.json({ error: 'Failed to fetch user data' }, { status: 500 })
   }
 }

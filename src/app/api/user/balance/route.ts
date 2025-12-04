@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
 /**
  * GET /api/user/balance?address=0x...
- * Get user's off-chain balance by wallet address
+ * Get user's off-chain balance by wallet address (with Redis cache)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,19 +26,24 @@ export async function GET(request: NextRequest) {
     }
 
     const normalizedAddress = address.toLowerCase()
+    const cacheKey = `${CACHE_KEYS.BALANCE}${normalizedAddress}`
 
-    // Find user by wallet address
-    const user = await db.user.findUnique({
-      where: { walletAddress: normalizedAddress },
-      select: {
-        id: true,
-        walletAddress: true,
-        balance: true,
-        totalDeposited: true,
-        totalWithdrawn: true,
-        updatedAt: true,
-      }
-    })
+    // ✅ Use cache with 30 second TTL
+    const user = await getCached(
+      cacheKey,
+      () => db.user.findUnique({
+        where: { walletAddress: normalizedAddress },
+        select: {
+          id: true,
+          walletAddress: true,
+          balance: true,
+          totalDeposited: true,
+          totalWithdrawn: true,
+          updatedAt: true,
+        }
+      }),
+      CACHE_TTL.BALANCE
+    )
 
     if (!user) {
       // User not found - they might need to create account first

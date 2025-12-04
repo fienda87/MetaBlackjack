@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,27 +22,34 @@ export async function GET(request: NextRequest) {
       whereClause.result = resultFilter.toUpperCase()
     }
 
-    // 🚀 PARALLEL QUERIES - fetch games and count simultaneously
-    const [games, totalCount] = await Promise.all([
-      db.game.findMany({
-        where: whereClause,
-        select: {
-          id: true,
-          createdAt: true,
-          betAmount: true,
-          result: true,
-          winAmount: true,
-          netProfit: true,
-          playerHand: true,
-          dealerHand: true,
-          sessionId: true
-        },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
-      }),
-      db.game.count({ where: whereClause })
-    ])
+    // ✅ Cache key includes pagination and filter
+    const cacheKey = `${CACHE_KEYS.HISTORY}${userId}:p${page}:l${limit}:f${resultFilter}`
+
+    // ✅ Use cache with 2 minute TTL
+    const [games, totalCount] = await getCached(
+      cacheKey,
+      () => Promise.all([
+        db.game.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            createdAt: true,
+            betAmount: true,
+            result: true,
+            winAmount: true,
+            netProfit: true,
+            playerHand: true,
+            dealerHand: true,
+            sessionId: true
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset
+        }),
+        db.game.count({ where: whereClause })
+      ]),
+      CACHE_TTL.HISTORY
+    )
 
     // 🚀 Minimal formatting - let client handle date formatting
     const formattedGames = games.map(game => {

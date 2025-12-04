@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withInternalAuth } from '@/lib/internal-auth';
 import { emitBlockchainBalanceUpdate, emitGameBalanceUpdate } from '@/lib/socket-instance';
+import { invalidateCache, CACHE_KEYS } from '@/lib/cache-helper';
 import { z } from 'zod';
 
 /**
@@ -126,6 +127,10 @@ export async function POST(request: NextRequest) {
       });
 
       console.log(`✅ Withdrawal processed: ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
+
+      // ✅ Invalidate cache after withdrawal
+      await invalidateCache(`${CACHE_KEYS.BALANCE}${normalizedAddress}`);
+      await invalidateCache(`${CACHE_KEYS.USER}${normalizedAddress}`);
 
       // Emit real-time balance updates via Socket.IO
       emitBlockchainBalanceUpdate(normalizedAddress, 'withdraw', amount, txHash);

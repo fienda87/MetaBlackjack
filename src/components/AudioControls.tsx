@@ -57,7 +57,6 @@ export default function AudioControls() {
   const handleTestSound = () => {
     audio.playButtonSound()
     setTimeout(() => audio.playCardDealSound(), 200)
-    setTimeout(() => audio.playChipPlaceSound(), 400)
   }
 
   const isMuted = settings.masterVolume === 0

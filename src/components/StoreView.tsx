@@ -435,7 +435,15 @@ export default function StoreView() {
         throw new Error(error.error || 'Failed to get signature')
       }
 
-      const { signature, nonce, finalBalance } = await response.json()
+      const { signature, nonce, finalBalance, signerAddress } = await response.json()
+
+      console.log('🔐 Withdrawal Signature Received:', {
+        signature,
+        nonce,
+        finalBalance,
+        signerAddress,
+        withdrawAmount,
+      })
 
       setWithdrawStep('signing')
       toast({
@@ -447,19 +455,32 @@ export default function StoreView() {
       const amountWei = parseUnits(withdrawAmount, 18)
       const finalBalanceWei = parseUnits(finalBalance, 18)
 
+      console.log('📤 Submitting withdrawal to contract:', {
+        contract: WITHDRAW_ADDRESS,
+        player: address,
+        amount: withdrawAmount + ' GBC (' + amountWei.toString() + ' wei)',
+        finalBalance: finalBalance + ' GBC (' + finalBalanceWei.toString() + ' wei)',
+        nonce,
+        signature,
+      })
+
       setWithdrawStep('withdrawing')
+      
+      // Normalize address to lowercase for contract call (must match signature)
+      const normalizedAddress = address.toLowerCase() as `0x${string}`
       
       const hash = await writeContractAsync({
         address: WITHDRAW_ADDRESS,
         abi: WITHDRAW_ABI,
         functionName: 'withdraw',
         args: [
-          address as `0x${string}`,
+          normalizedAddress,
           amountWei,
           finalBalanceWei,
           BigInt(nonce),
           signature as `0x${string}`,
         ],
+        gas: 300000n, // Explicit gas limit to prevent estimation issues
       })
 
       setWithdrawTxHash(hash)
@@ -670,24 +691,6 @@ export default function StoreView() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Allowance Info */}
-              <Alert className="bg-blue-900/30 border-blue-700">
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-1">
-                    <p className="font-medium">Current Allowance:</p>
-                    <p className="text-sm">
-                      {formatUnits(allowance, 18)} GBC approved for deposits
-                    </p>
-                    {allowance === BigInt(0) && (
-                      <p className="text-xs text-yellow-400 mt-2">
-                        ⚠️ You need to approve tokens before depositing
-                      </p>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
-
               {/* Amount Input */}
               <div className="space-y-2">
                 <Label htmlFor="depositAmount" className="text-green-400">
@@ -977,28 +980,18 @@ export default function StoreView() {
             <CardHeader>
               <CardTitle className="text-green-400">Free GBC Faucet</CardTitle>
               <CardDescription className="text-green-300">
-                Claim free testnet GBC tokens every 24 hours
+                New players can claim free GBC tokens to start playing
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Faucet Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="bg-green-900/10 border-green-500/30">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-sm text-green-300 mb-1">Claim Amount</p>
-                    <p className="text-2xl font-bold text-green-400">{faucetAmount} GBC</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-green-900/10 border-green-500/30">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-sm text-green-300 mb-1">Next Claim</p>
-                    <p className="text-2xl font-bold text-green-400">
-                      {cooldownRemaining > 0 ? formatTime(cooldownRemaining) : 'Ready!'}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+              <Card className="bg-green-900/10 border-green-500/30">
+                <CardContent className="p-6 text-center">
+                  <p className="text-sm text-green-300 mb-2">Welcome Bonus</p>
+                  <p className="text-3xl font-bold text-green-400">{faucetAmount} GBC</p>
+                  <p className="text-xs text-green-300 mt-2">One-time claim per wallet</p>
+                </CardContent>
+              </Card>
 
               {/* Claim Button */}
               <Button
@@ -1012,7 +1005,7 @@ export default function StoreView() {
                     Claiming...
                   </>
                 ) : cooldownRemaining > 0 ? (
-                  <>Wait {formatTime(cooldownRemaining)}</>
+                  <>Already Claimed</>
                 ) : (
                   <>
                     <Coins className="w-5 h-5 mr-2" />
@@ -1027,10 +1020,10 @@ export default function StoreView() {
                 <AlertDescription className="text-sm text-green-300">
                   <p className="font-medium mb-2">Faucet Rules:</p>
                   <ul className="list-disc list-inside space-y-1 text-xs">
-                    <li>Claim {faucetAmount} GBC every 24 hours</li>
+                    <li>One-time claim of {faucetAmount} GBC per wallet address</li>
                     <li>Testnet tokens only (no real value)</li>
                     <li>Use for testing and playing games</li>
-                    <li>Automatic cooldown after each claim</li>
+                    <li>Each wallet can only claim once</li>
                   </ul>
                 </AlertDescription>
               </Alert>

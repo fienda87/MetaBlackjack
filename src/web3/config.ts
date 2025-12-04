@@ -2,6 +2,7 @@ import { createConfig, http } from 'wagmi'
 import { polygonAmoy } from 'wagmi/chains'
 import { metaMask, walletConnect } from 'wagmi/connectors'
 import { createPublicClient } from 'viem'
+import { logger } from '@/lib/logger'
 
 // Polygon Amoy testnet configuration
 export const POLYGON_AMOY = {
@@ -139,7 +140,7 @@ export const addPolygonAmoyToMetaMask = async () => {
       })
       return true
     } catch (error) {
-      console.error('Failed to add Polygon Amoy to MetaMask:', error)
+      logger.error('Failed to add Polygon Amoy to MetaMask', error)
       return false
     }
   }
@@ -160,7 +161,7 @@ export const switchToPolygonAmoy = async () => {
       if (error.code === 4902) {
         return await addPolygonAmoyToMetaMask()
       }
-      console.error('Failed to switch to Polygon Amoy:', error)
+      logger.error('Failed to switch to Polygon Amoy', error)
       return false
     }
   }

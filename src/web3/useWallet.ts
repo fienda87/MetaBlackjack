@@ -6,6 +6,7 @@ import { metaMask } from 'wagmi/connectors'
 import { config, switchToPolygonAmoy, CONTRACTS, GBC_TOKEN_ABI } from '@/web3/config'
 import { readContract, writeContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { formatEther, parseEther } from 'viem'
+import { logger } from '@/lib/logger'
 
 export interface WalletState {
   isConnected: boolean
@@ -50,7 +51,7 @@ export function useWallet() {
 
       setGbcBalance(formatEther(balance as bigint))
     } catch (err) {
-      console.error('Failed to fetch GBC balance:', err)
+      logger.error('Failed to fetch GBC balance', err)
       setGbcBalance('0')
     }
   }, [address, isConnected])
@@ -96,7 +97,7 @@ export function useWallet() {
     try {
       // In production, this would send MATIC to a contract that mints GBC
       // For now, we'll just show the transaction
-      console.log(`Depositing ${amount} MATIC to convert to GBC`)
+      logger.info(`Depositing ${amount} MATIC to convert to GBC`)
       
       // TODO: Implement actual deposit contract
       // This would:
@@ -126,7 +127,7 @@ export function useWallet() {
       // In production, this would:
       // 1. Burn GBC tokens
       // 2. Send equivalent MATIC back to player
-      console.log(`Withdrawing ${amount} GBC to convert to MATIC`)
+      logger.info(`Withdrawing ${amount} GBC to convert to MATIC`)
       
       // TODO: Implement actual withdraw contract
 

@@ -4,12 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useWallet } from '@/web3/useWallet'
 import { toast } from './use-toast'
 
-interface GameBalanceData {
-  walletAddress: string
-  gameBalance: string
-  lastUpdated: string
-}
-
 // Cache configuration
 const CACHE_DURATION = 10000 // 10 seconds
 const DEBOUNCE_DELAY = 1000 // 1 second
@@ -51,7 +45,6 @@ export function useGameBalance() {
     if (!bypassCache) {
       const cached = balanceCache.get(address)
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        console.log('💾 Using cached game balance:', cached.balance)
         setGameBalance(cached.balance)
         return
       }
@@ -70,12 +63,8 @@ export function useGameBalance() {
       // Extract game balance from response
       const balanceValue = data.gameBalance || data.balance || '0'
       
-      console.log('📊 API Response:', {
-        gameBalance: data.gameBalance,
-        balance: data.balance,
-        extracted: balanceValue,
-        exists: data.exists
-      })
+      // dev-only detailed logging
+      // logger.debug('API Response balance payload', { gameBalance: data.gameBalance, balance: data.balance, extracted: balanceValue, exists: data.exists })
       
       // Update cache
       balanceCache.set(address, {
@@ -85,9 +74,8 @@ export function useGameBalance() {
       
       setGameBalance(balanceValue)
       setLastUpdated(new Date(data.lastUpdated))
-      console.log('✅ Game balance fetched:', balanceValue)
-    } catch (error) {
-      console.error('Error fetching game balance:', error)
+    } catch {
+      // Swallow error to avoid noisy logs in production; surfaced via toast below
       toast({
         title: 'Error',
         description: 'Failed to fetch game balance',

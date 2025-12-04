@@ -31,7 +31,11 @@ export async function POST(request: NextRequest) {
     
     // Validate request
     const validated = withdrawalSchema.parse(body)
-    const { playerAddress, amount } = validated
+    let { playerAddress, amount } = validated
+
+    // IMPORTANT: Normalize address to lowercase for signature consistency
+    // Ethereum addresses are case-insensitive but signature must use consistent format
+    playerAddress = playerAddress.toLowerCase()
 
     // Get backend private key from environment
     const backendPrivateKey = process.env.BACKEND_SIGNER_PRIVATE_KEY
@@ -59,6 +63,7 @@ export async function POST(request: NextRequest) {
 
     // Create message hash matching contract expectations
     // Must match GameWithdraw.sol contract exactly
+    // Contract does: keccak256(abi.encodePacked(player, amount, finalBalance, nonce))
     const messageHash = ethers.solidityPackedKeccak256(
       ['address', 'uint256', 'uint256', 'uint256'],
       [
@@ -69,17 +74,30 @@ export async function POST(request: NextRequest) {
       ]
     )
 
-    // Sign the message
+    // Sign the message (ethers.js automatically adds Ethereum prefix)
     const signature = await signer.signMessage(ethers.getBytes(messageHash))
 
-    // Store nonce in database for replay prevention
-    await storeUsedNonce(nonce, playerAddress)
+    // Debug logging
+    console.log('🔐 Withdrawal Signature Generated:', {
+      playerAddress,
+      amount: ethers.parseEther(amount).toString(),
+      finalBalance: ethers.parseEther(finalBalance.toString()).toString(),
+      nonce,
+      messageHash,
+      signature,
+      signerAddress: signer.address,
+      backendSigner: process.env.BACKEND_SIGNER_PRIVATE_KEY?.slice(0, 10) + '...',
+    })
+
+    // NOTE: Don't store nonce here - it will be stored by withdrawal listener after on-chain success
+    // await storeUsedNonce(nonce, playerAddress)
 
     return NextResponse.json({
       signature,
       nonce,
       finalBalance: finalBalance.toString(),
       playerAddress,
+      signerAddress: signer.address,
       timestamp: new Date().toISOString(),
     })
   } catch (error) {

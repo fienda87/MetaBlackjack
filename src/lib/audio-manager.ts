@@ -51,7 +51,7 @@ class AudioManager {
 
       // Preload all sound effects
       const sfxFiles = [
-        'button-click', 'card-deal', 'card-flip', 'chip-place',
+        'button-click', 'card-deal',
         'win', 'lose', 'blackjack', 'push', 'bust'
       ]
 
@@ -88,6 +88,8 @@ class AudioManager {
 
     const sound = this.sounds.get(soundName)
     if (sound) {
+      // Stop previous instance to prevent spam
+      sound.stop()
       sound.volume(this.settings.sfxVolume * this.settings.masterVolume)
       sound.play()
     } else {
@@ -101,14 +103,6 @@ class AudioManager {
 
   playCardDealSound() {
     this.playSound('card-deal')
-  }
-
-  playCardFlipSound() {
-    this.playSound('card-flip')
-  }
-
-  playChipPlaceSound() {
-    this.playSound('chip-place')
   }
 
   playWinSound() {
@@ -230,7 +224,7 @@ class AudioManager {
     const results: { [key: string]: boolean } = {}
     
     const soundFiles = [
-      'button-click', 'card-deal', 'card-flip', 'chip-place', 
+      'button-click', 'card-deal', 
       'win', 'lose', 'blackjack', 'push', 'bust'
     ]
 

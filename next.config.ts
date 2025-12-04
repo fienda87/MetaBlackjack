@@ -11,7 +11,26 @@ const nextConfig: NextConfig = {
   // Optimize CSS loading to prevent preload warnings
   experimental: {
     optimizeCss: true, // Enable CSS optimization
-    optimizePackageImports: ['@/components/ui'], // Optimize UI component imports
+    optimizePackageImports: [
+      '@/components/ui',
+      '@radix-ui/react-alert-dialog',
+      '@radix-ui/react-avatar',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-toast',
+      'lucide-react',
+      'framer-motion',
+    ],
+  },
+  
+  // Minimize bundle in production
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
   },
   
   webpack: (config) => {

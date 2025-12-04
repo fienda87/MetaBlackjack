@@ -1,17 +1,9 @@
 import { Server } from 'socket.io';
 import { db } from './db';
 import { GameEngine } from '@/domain/usecases/GameEngine';
+import { logger } from '@/lib/logger';
 import { calculateGameResult } from './game-logic';
-import { cache, CacheKeys } from './cache';
-import { 
-  cacheGet, 
-  cacheSet, 
-  cacheDelete,
-  checkRateLimit,
-  isRedisConnected,
-  CACHE_KEYS,
-  CACHE_TTL
-} from './redis';
+import { checkRateLimit } from './redis';
 
 interface GameState {
   id: string;
@@ -48,8 +40,27 @@ export const setupSocket = (io: Server) => {
   const activeGames = new Map<string, GameState>();
   const playerBalances = new Map<string, number>();
 
+  // Connection error handling
+  io.engine.on('connection_error', (err) => {
+    logger.error('Connection error', { code: err.code, message: err.message });
+  });
+
   io.on('connection', (socket) => {
-    console.log('Player connected:', socket.id);
+    logger.info('Player connected', socket.id);
+    
+    // Heartbeat monitoring
+    let heartbeatInterval: NodeJS.Timeout;
+    
+    socket.on('heartbeat', () => {
+      socket.emit('heartbeat-ack');
+    });
+    
+    // Auto-cleanup check
+    heartbeatInterval = setInterval(() => {
+      if (!socket.connected) {
+        clearInterval(heartbeatInterval);
+      }
+    }, 30000);
     
     // Initialize player session
     socket.on('player:init', (data: { playerId: string; initialBalance: number }) => {
@@ -366,7 +377,7 @@ export const setupSocket = (io: Server) => {
               status: 'COMPLETED',
               referenceId: data.gameId
             }
-          }).catch(err => console.error('[SOCKET] Transaction creation failed:', err));
+          }).catch(err => logger.error('[SOCKET] Transaction creation failed', err));
         }
         
         // 🚀 Send instant response
@@ -404,7 +415,8 @@ export const setupSocket = (io: Server) => {
 
     // Handle disconnect
     socket.on('disconnect', () => {
-      console.log('Player disconnected:', socket.id);
+      clearInterval(heartbeatInterval);
+      logger.info('Player disconnected', socket.id);
       // Keep game state in memory for potential reconnection
     });
   });
@@ -456,7 +468,7 @@ export function emitBalanceUpdate(
     timestamp: Date.now()
   })
   
-  console.log(`📡 Emitted balance update for ${walletAddress}: ${type} ${amount} GBC`)
+  logger.info('Emitted balance update', { walletAddress, type, amount })
 }
 
 /**
@@ -474,5 +486,5 @@ export function emitGameBalanceUpdate(
     timestamp: Date.now()
   })
   
-  console.log(`🎮 Emitted game balance update for ${walletAddress}: ${newGameBalance} GBC`)
+  logger.info('Emitted game balance update', { walletAddress, newGameBalance })
 }

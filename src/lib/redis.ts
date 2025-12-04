@@ -4,6 +4,7 @@
  */
 
 import Redis from 'ioredis'
+import { logger } from '@/lib/logger'
 
 // Redis configuration
 const REDIS_CONFIG = {
@@ -38,18 +39,18 @@ export async function initRedis(): Promise<Redis | null> {
   }
 
   try {
-    console.log('[Redis] Attempting to connect...')
+    logger.info('[Redis] Attempting to connect...')
     
     redisClient = new Redis(REDIS_CONFIG)
 
     // Connection events
     redisClient.on('connect', () => {
-      console.log('✅ [Redis] Connected successfully')
+      logger.info('[Redis] Connected successfully')
       isRedisAvailable = true
     })
 
     redisClient.on('ready', () => {
-      console.log('✅ [Redis] Ready to accept commands')
+      logger.info('[Redis] Ready to accept commands')
     })
 
     redisClient.on('error', (err) => {
@@ -57,7 +58,7 @@ export async function initRedis(): Promise<Redis | null> {
       if (err.message.includes('ECONNREFUSED') || err.message.includes('ENOTFOUND')) {
         // Silent fail - Redis not available
       } else {
-        console.warn('⚠️  [Redis] Error:', err.message)
+        logger.warn('[Redis] Error', err.message)
       }
       isRedisAvailable = false
     })
@@ -118,7 +119,7 @@ export async function closeRedis(): Promise<void> {
     await redisClient.quit()
     redisClient = null
     isRedisAvailable = false
-    console.log('[Redis] Connection closed')
+    logger.info('[Redis] Connection closed')
   }
 }
 
@@ -162,7 +163,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     
     return JSON.parse(data) as T
   } catch (error) {
-    console.error(`[Redis] Get error for key ${key}:`, error)
+    logger.error(`[Redis] Get error for key ${key}`, error)
     return null
   }
 }
@@ -184,7 +185,7 @@ export async function cacheSet<T>(
     await redisClient.setex(key, ttl, serialized)
     return true
   } catch (error) {
-    console.error(`[Redis] Set error for key ${key}:`, error)
+    logger.error(`[Redis] Set error for key ${key}`, error)
     return false
   }
 }
@@ -201,7 +202,7 @@ export async function cacheDelete(key: string): Promise<boolean> {
     await redisClient.del(key)
     return true
   } catch (error) {
-    console.error(`[Redis] Delete error for key ${key}:`, error)
+    logger.error(`[Redis] Delete error for key ${key}`, error)
     return false
   }
 }
@@ -221,7 +222,7 @@ export async function cacheDeletePattern(pattern: string): Promise<number> {
     await redisClient.del(...keys)
     return keys.length
   } catch (error) {
-    console.error(`[Redis] Delete pattern error for ${pattern}:`, error)
+    logger.error(`[Redis] Delete pattern error for ${pattern}`, error)
     return 0
   }
 }
@@ -238,7 +239,7 @@ export async function cacheExists(key: string): Promise<boolean> {
     const exists = await redisClient.exists(key)
     return exists === 1
   } catch (error) {
-    console.error(`[Redis] Exists error for key ${key}:`, error)
+    logger.error(`[Redis] Exists error for key ${key}`, error)
     return false
   }
 }
@@ -284,7 +285,7 @@ export async function getCacheStats(): Promise<{
       hitRate: parseFloat(hitRate.toFixed(2))
     }
   } catch (error) {
-    console.error('[Redis] Stats error:', error)
+    logger.error('[Redis] Stats error', error)
     return {
       connected: false,
       totalKeys: 0,
@@ -334,7 +335,7 @@ export async function checkRateLimit(
       resetAt
     }
   } catch (error) {
-    console.error('[Redis] Rate limit error:', error)
+    logger.error('[Redis] Rate limit error', error)
     // Fallback: Allow request on error
     return {
       allowed: true,

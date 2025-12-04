@@ -1,7 +1,7 @@
 'use client'
 
 import React, { memo, useMemo, useCallback, useState, useEffect } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
+import { useDispatch, useSelector, shallowEqual } from 'react-redux'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/dialog'
 import { 
   Play, 
-  RotateCcw,
   Coins,
   TrendingUp,
   TrendingDown,
@@ -35,11 +34,10 @@ import { useAudio } from '@/hooks/useAudio'
 import { useGameBet } from '@/hooks/useGameBet'
 import { useGameBalance } from '@/hooks/useGameBalance'
 import CardDeck from '@/components/CardDeck'
-import { CardDealingAnimation } from '@/lib/card-dealing'
 import { useSettingsStore } from '@/store/settingsStore'
 import { shouldSurrender } from '@/lib/game-logic'
 import { useSocket } from '@/hooks/useSocket'
-import { OptimisticGameState, requestQueue } from '@/lib/optimistic-updates'
+import { requestQueue } from '@/lib/optimistic-updates'
 
 // Memoized card component with smaller size and dynamic animation delay
 const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: { 
@@ -98,7 +96,7 @@ MemoizedCard.displayName = 'MemoizedCard'
 const QuickBetButtons = memo(({ 
   onQuickBet, 
   balance, 
-  currentBet, 
+  _currentBet, 
   disabled 
 }: {
   onQuickBet: (amount: number) => void
@@ -144,49 +142,6 @@ const QuickBetButtons = memo(({
 })
 QuickBetButtons.displayName = 'QuickBetButtons'
 
-// W/L/P Indicators component
-const GameIndicators = memo(({ 
-  wins, 
-  losses, 
-  pushes, 
-  blackjacks 
-}: {
-  wins: number
-  losses: number
-  pushes: number
-  blackjacks: number
-}) => {
-  return (
-    <div className="flex gap-4 justify-center">
-      <div className="text-center">
-        <div className="flex items-center gap-1">
-          <TrendingUp className="w-4 h-4 text-green-400" />
-          <span className="text-green-400 font-bold">W: {wins}</span>
-        </div>
-      </div>
-      <div className="text-center">
-        <div className="flex items-center gap-1">
-          <TrendingDown className="w-4 h-4 text-red-400" />
-          <span className="text-red-400 font-bold">L: {losses}</span>
-        </div>
-      </div>
-      <div className="text-center">
-        <div className="flex items-center gap-1">
-          <Minimize2 className="w-4 h-4 text-yellow-400" />
-          <span className="text-yellow-400 font-bold">P: {pushes}</span>
-        </div>
-      </div>
-      <div className="text-center">
-        <div className="flex items-center gap-1">
-          <Coins className="w-4 h-4 text-purple-400" />
-          <span className="text-purple-400 font-bold">BJ: {blackjacks}</span>
-        </div>
-      </div>
-    </div>
-  )
-})
-GameIndicators.displayName = 'GameIndicators'
-
 // Betting controls component with improved layout and GBC betting
 const BettingControls = memo(({ 
   betAmount, 
@@ -204,8 +159,6 @@ const BettingControls = memo(({
   const [inputValue, setInputValue] = useState(betAmount.toString())
   const [error, setError] = useState('')
   const [showErrorPopup, setShowErrorPopup] = useState(false)
-  const [betMethod, setBetMethod] = useState<'fiat' | 'gbc'>('fiat')
-  const { placeBet: placeGBCBet, isBurning } = useGameBet()
   
   // Handle input change with validation
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -256,38 +209,10 @@ const BettingControls = memo(({
       setShowErrorPopup(false)
     }
   }, [balance, onBetChange])
-
-  // Handle GBC bet
-  const handleGBCBet = useCallback(async () => {
-    const success = await placeGBCBet(betAmount.toString())
-    if (success) {
-      onDeal()
-    }
-  }, [betAmount, placeGBCBet, onDeal])
   
   return (
     <>
       <div className="space-y-4">
-        {/* Bet Method Selector */}
-        <div className="flex justify-center gap-2">
-          <Button
-            variant={betMethod === 'fiat' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setBetMethod('fiat')}
-            className={betMethod === 'fiat' ? 'bg-green-600 text-black' : 'border-green-600 text-green-400'}
-          >
-            Regular Bet
-          </Button>
-          <Button
-            variant={betMethod === 'gbc' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setBetMethod('gbc')}
-            className={betMethod === 'gbc' ? 'bg-purple-600 text-white' : 'border-purple-600 text-purple-400'}
-          >
-            🪙 GBC Bet
-          </Button>
-        </div>
-
         <div className="text-center">
           <Label className="text-green-400 text-sm">Bet Amount (GBC)</Label>
           <div className="flex justify-center mt-2">
@@ -298,7 +223,7 @@ const BettingControls = memo(({
                 onChange={handleInputChange}
                 placeholder="Enter amount"
                 className="w-32 text-center bg-black border-green-600 text-green-400"
-                disabled={isLoading || isBurning}
+                disabled={isLoading}
                 min="1"
                 max={balance}
               />
@@ -310,37 +235,18 @@ const BettingControls = memo(({
           onQuickBet={handleQuickBet}
           balance={balance}
           currentBet={betAmount}
-          disabled={isLoading || isBurning}
+          disabled={isLoading}
         />
 
         <div className="flex justify-center">
-          {betMethod === 'fiat' ? (
-            <Button
-              onClick={onDeal}
-              className="bg-green-600 text-black hover:bg-green-500 font-bold px-8"
-              disabled={isLoading || betAmount > balance || betAmount < 1 || !!error}
-            >
-              <Play className="w-4 h-4 mr-2" />
-              Deal Cards
-            </Button>
-          ) : (
-            <Button
-              onClick={handleGBCBet}
-              className="bg-purple-600 text-white hover:bg-purple-500 font-bold px-8"
-              disabled={isBurning || betAmount > balance || betAmount < 1}
-            >
-              {isBurning ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Burning GBC...
-                </>
-              ) : (
-                <>
-                  🔥 Burn {betAmount} GBC
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            onClick={onDeal}
+            className="bg-green-600 text-black hover:bg-green-500 font-bold px-8"
+            disabled={isLoading || betAmount > balance || betAmount < 1 || !!error}
+          >
+            <Play className="w-4 h-4 mr-2" />
+            Deal Cards
+          </Button>
         </div>
       </div>
 
@@ -523,10 +429,15 @@ const DealConfirmationDialog = memo(({
 DealConfirmationDialog.displayName = 'DealConfirmationDialog'
 
 // Main component
-const GameTable: React.FC = () => {
+const GameTable: React.FC = memo(() => {
   const dispatch = useDispatch<AppDispatch>()
-  const { currentGame, balance, isLoading, error } = useSelector((state: RootState) => state.game)
-  const { user } = useSelector((state: RootState) => state.wallet)
+  
+  // Selective Redux selectors with shallow equality checks
+  const currentGame = useSelector((state: RootState) => state.game.currentGame, shallowEqual)
+  const balance = useSelector((state: RootState) => state.game.balance)
+  const isLoading = useSelector((state: RootState) => state.game.isLoading)
+  const error = useSelector((state: RootState) => state.game.error)
+  const user = useSelector((state: RootState) => state.wallet.user, shallowEqual)
   
   // Use real game balance (off-chain from database)
   const { 
@@ -538,9 +449,6 @@ const GameTable: React.FC = () => {
   
   // Sync balance between game and wallet
   useBalanceSync()
-  
-  // Get game stats from history
-  const gameStats = useGameStats()
   
   // WebSocket integration for real-time features (FAST game actions!)
   const socketManager = useSocket(user?.id || 'guest', offChainGBC || 1000)
@@ -636,11 +544,11 @@ const GameTable: React.FC = () => {
   const [isRevealingDealerCards, setIsRevealingDealerCards] = useState(false)
   const [isDealingCards, setIsDealingCards] = useState(false)
   const [dealtPlayerCards, setDealtPlayerCards] = useState<any[]>([])
-  const [dealtDealerCards, setDealtDealerCards] = useState<any[]>([])
+  const [_dealtDealerCards, _setDealtDealerCards] = useState<any[]>([])
   const [lastPlayedResultSound, setLastPlayedResultSound] = useState<string | null>(null)
   
   // Get settings for card dealing speed
-  const { cardDealingSpeed } = useSettingsStore()
+  const { cardDealingSpeed: _cardDealingSpeed } = useSettingsStore()
 
   // Update bet amount when balance changes
   useEffect(() => {
@@ -752,11 +660,8 @@ const GameTable: React.FC = () => {
     if (user && betAmount >= 1 && betAmount <= currentBalance) {
       setIsDealingCards(true)
       setDealtPlayerCards([])
-      setDealtDealerCards([])
+      _setDealtDealerCards([])
       setLastPlayedResultSound(null) // Reset sound flag for new game
-      
-      // Play chip place sound
-      audio.playChipPlaceSound()
       
       // Update balance via WebSocket (bet deduction)
       socketManager.updateBalance(-betAmount, 'bet')
@@ -864,8 +769,6 @@ const GameTable: React.FC = () => {
           currentGame.id, 
           'stand'
         )
-        // Play card flip sound for dealer reveal
-        audio.playCardFlipSound()
         // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
         return result
@@ -1092,6 +995,23 @@ const GameTable: React.FC = () => {
     ))
   }, [currentGame, isDealingCards, dealtPlayerCards])
 
+  // Memoize hand values to avoid recalculation
+  const playerHandValue = useMemo(() => 
+    currentGame?.playerHand?.value ?? 0,
+    [currentGame?.playerHand?.value]
+  )
+
+  const dealerHandValue = useMemo(() => 
+    currentGame?.dealerHand?.value ?? 0,
+    [currentGame?.dealerHand?.value]
+  )
+
+  const playerHandStatus = useMemo(() => ({
+    isBust: currentGame?.playerHand?.isBust ?? false,
+    isBlackjack: currentGame?.playerHand?.isBlackjack ?? false,
+    is21: (currentGame?.playerHand?.value ?? 0) === 21 && !currentGame?.playerHand?.isBlackjack
+  }), [currentGame?.playerHand?.isBust, currentGame?.playerHand?.isBlackjack, currentGame?.playerHand?.value])
+
   if (!user) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -1110,18 +1030,10 @@ const GameTable: React.FC = () => {
       <Card className="bg-black border-green-900/30">
         <CardContent className="p-4">
           <div className="flex justify-between items-center">
-            <div className="flex gap-4">
-              <div className="text-center">
-                <p className="text-xs text-green-600">Player</p>
-                <p className="text-sm font-bold text-green-400">{user.username || 'Anonymous'}</p>
-              </div>
+            <div className="text-center">
+              <p className="text-xs text-green-600">Player</p>
+              <p className="text-sm font-bold text-green-400">{user.username || 'Anonymous'}</p>
             </div>
-            <GameIndicators 
-              wins={gameStats.wins}
-              losses={gameStats.losses}
-              pushes={gameStats.pushes}
-              blackjacks={gameStats.blackjacks}
-            />
             <Badge variant="outline" className="text-green-400 border-green-600">
               <Coins className="w-4 h-4 mr-1" />
               {currentBalance.toLocaleString()} GBC
@@ -1146,7 +1058,7 @@ const GameTable: React.FC = () => {
               <h3 className="text-base font-semibold text-green-400">Dealer</h3>
               {currentGame && currentGame.state === 'ENDED' && (
                 <Badge variant={currentGame.dealerHand.isBust ? "destructive" : "default"} className="bg-green-600 text-black text-xs">
-                  Value: {currentGame.dealerHand.value}
+                  Value: {dealerHandValue}
                   {currentGame.dealerHand.isBust && ' (Bust)'}
                 </Badge>
               )}
@@ -1175,11 +1087,11 @@ const GameTable: React.FC = () => {
             <div className="flex items-center gap-4 mb-2">
               <h3 className="text-base font-semibold text-green-400">Player</h3>
               {currentGame && currentGame.playerHand.cards.length > 0 && (
-                <Badge variant={currentGame.playerHand.isBust ? "destructive" : "default"} className="bg-green-600 text-black text-xs">
-                  Value: {currentGame.playerHand.value}
-                  {currentGame.playerHand.isBust && ' (Bust)'}
-                  {currentGame.playerHand.isBlackjack && ' (Blackjack!)'}
-                  {currentGame.playerHand.value === 21 && !currentGame.playerHand.isBlackjack && ' (21)'}
+                <Badge variant={playerHandStatus.isBust ? "destructive" : "default"} className="bg-green-600 text-black text-xs">
+                  Value: {playerHandValue}
+                  {playerHandStatus.isBust && ' (Bust)'}
+                  {playerHandStatus.isBlackjack && ' (Blackjack!)'}
+                  {playerHandStatus.is21 && ' (21)'}
                 </Badge>
               )}
             </div>
@@ -1269,6 +1181,8 @@ const GameTable: React.FC = () => {
       })()}
     </div>
   )
-}
+})
+
+GameTable.displayName = 'GameTable'
 
 export default GameTable

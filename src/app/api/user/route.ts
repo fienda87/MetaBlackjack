@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 export async function GET() {
   try {
     // For demo purposes, use the first available user or create one
-    let user = await db.user.findFirst()
+    const users = await db.user.findMany({ take: 1, select: { id: true, walletAddress: true, email: true, username: true, balance: true } })
+    let user = users[0] || null
     
     if (!user) {
       user = await db.user.create({
@@ -19,7 +21,7 @@ export async function GET() {
     
     return NextResponse.json({ user })
   } catch (error) {
-    console.error('Error fetching user:', error)
+    logger.error('Error fetching user', error)
     return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 })
   }
 }
@@ -29,7 +31,8 @@ export async function POST(request: NextRequest) {
     const { balance } = await request.json()
     
     // For demo purposes, use the first available user
-    let user = await db.user.findFirst()
+    const users = await db.user.findMany({ take: 1, select: { id: true } })
+    const user = users[0] || null
     
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -42,7 +45,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({ user: updatedUser })
   } catch (error) {
-    console.error('Error updating user balance:', error)
+    logger.error('Error updating user balance', error)
     return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 })
   }
 }

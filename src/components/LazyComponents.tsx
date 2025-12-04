@@ -1,6 +1,7 @@
 'use client'
 
-import React, { lazy, Suspense } from 'react'
+import React from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 
@@ -13,40 +14,35 @@ const ComponentLoader = () => (
   </Card>
 )
 
-// Lazy loaded components
-export const LazyGameHistory = lazy(() => import('@/components/GameHistory'))
-export const LazyRulesGuide = lazy(() => import('@/components/RulesGuide'))
-export const LazySettings = lazy(() => import('@/components/Settings'))
-export const LazyWallet = lazy(() => import('@/components/Wallet'))
-export const LazyStoreView = lazy(() => import('@/components/StoreView'))
+// Lazy loaded components with dynamic imports (client-side only)
+export const LazyGameHistory = dynamic(() => import('@/components/GameHistory'), {
+  loading: ComponentLoader,
+  ssr: false,
+})
 
-// Wrapper components with Suspense
-export const SuspenseGameHistory = () => (
-  <Suspense fallback={<ComponentLoader />}>
-    <LazyGameHistory />
-  </Suspense>
-)
+export const LazyRulesGuide = dynamic(() => import('@/components/RulesGuide'), {
+  loading: ComponentLoader,
+  ssr: false,
+})
 
-export const SuspenseRulesGuide = () => (
-  <Suspense fallback={<ComponentLoader />}>
-    <LazyRulesGuide />
-  </Suspense>
-)
+export const LazySettings = dynamic(() => import('@/components/Settings'), {
+  loading: ComponentLoader,
+  ssr: false,
+})
 
-export const SuspenseSettings = () => (
-  <Suspense fallback={<ComponentLoader />}>
-    <LazySettings />
-  </Suspense>
-)
+export const LazyWallet = dynamic(() => import('@/components/Wallet'), {
+  loading: ComponentLoader,
+  ssr: false,
+})
 
-export const SuspenseWallet = (props: any) => (
-  <Suspense fallback={<ComponentLoader />}>
-    <LazyWallet {...props} />
-  </Suspense>
-)
+export const LazyStoreView = dynamic(() => import('@/components/StoreView'), {
+  loading: ComponentLoader,
+  ssr: false,
+})
 
-export const SuspenseStoreView = (props: any) => (
-  <Suspense fallback={<ComponentLoader />}>
-    <LazyStoreView {...props} />
-  </Suspense>
-)
+// Wrapper components (aliases for consistency)
+export const SuspenseGameHistory = LazyGameHistory
+export const SuspenseRulesGuide = LazyRulesGuide
+export const SuspenseSettings = LazySettings
+export const SuspenseWallet = LazyWallet
+export const SuspenseStoreView = LazyStoreView
