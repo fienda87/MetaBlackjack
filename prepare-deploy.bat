@@ -29,7 +29,7 @@ git pull origin main 2>nul || echo No changes to pull
 REM 3. Install dependencies
 echo.
 echo [2/6] Installing dependencies...
-call npm install
+call npm install --legacy-peer-deps
 if errorlevel 1 (
     echo ERROR: npm install failed
     pause

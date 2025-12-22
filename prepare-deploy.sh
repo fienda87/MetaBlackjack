@@ -28,7 +28,13 @@ git pull origin main || echo "No changes to pull"
 # 3. Install dependencies
 echo ""
 echo "📦 Installing dependencies..."
-npm install
+npm install --legacy-peer-deps
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ npm install failed!"
+    exit 1
+fi
 
 # 4. Generate Prisma Client
 echo ""
