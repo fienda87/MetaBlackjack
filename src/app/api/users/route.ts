@@ -11,7 +11,6 @@ export async function GET() {
         walletAddress: true,
         balance: true,
         createdAt: true,
-        role: true,
         _count: {
           select: {
             games: true,
