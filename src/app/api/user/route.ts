@@ -14,7 +14,7 @@ export async function GET() {
           walletAddress: 'demo-wallet',
           email: 'demo@metablackjack.com',
           username: 'Demo User',
-          balance: 1000
+          balance: 0
         }
       })
     }

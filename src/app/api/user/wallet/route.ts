@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+  import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { getCached, invalidateCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
@@ -32,13 +32,13 @@ export async function GET(request: NextRequest) {
       CACHE_TTL.USER
     )
 
-    // If user doesn't exist, create new one with initial balance
+    // If user doesn't exist, create new one with zero balance
     if (!user) {
       user = await db.user.create({
         data: {
           walletAddress: normalizedAddress,
           username: `Player ${normalizedAddress.slice(0, 6)}`,
-          balance: 1000, // Initial game balance
+          balance: 0, // Users must deposit or claim faucet to get GBC
         }
       })
 
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       create: {
         walletAddress: normalizedAddress,
         username: username || `Player ${normalizedAddress.slice(0, 6)}`,
-        balance: 1000,
+        balance: 0,
       }
     })
 

@@ -1,0 +1,19 @@
+# This is a backup note - Check if package.json has correct build scripts
+
+Ensure your package.json has:
+
+```json
+{
+  "scripts": {
+    "dev": "nodemon --exec \"npx tsx server.ts\" --watch server.ts --watch src --ext ts,tsx,js,jsx 2>&1 | tee dev.log",
+    "build": "npx prisma generate && next build",
+    "start": "NODE_ENV=production tsx server.ts 2>&1 | tee server.log",
+    "postinstall": "prisma generate",
+    "lint": "next lint"
+  }
+}
+```
+
+The important ones for Vercel deployment:
+- "build": "npx prisma generate && next build" - Ensures Prisma client is generated before build
+- "postinstall": "prisma generate" - Generates Prisma client after npm install
