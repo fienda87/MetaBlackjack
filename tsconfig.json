@@ -40,7 +40,6 @@
     "out",
     "scripts/**/*.ts",
     "db/**",
-    "blockchain/artifacts/**",
-    "blockchain/cache/**"
+    "blockchain/**"
   ]
 }
