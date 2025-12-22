@@ -12,7 +12,7 @@
 
 **Windows:**
 ```cmd
-prepare-deploy.bat
+.\prepare-deploy.bat
 ```
 
 **Linux/Mac:**
