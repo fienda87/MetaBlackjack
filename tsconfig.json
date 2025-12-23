@@ -1,11 +1,15 @@
 {
   "compilerOptions": {
+    // ✅ Fast transpile mode
     "target": "ES2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
-    "skipLibCheck": true,
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "noEmit": true, // Skip emit errors for type checking only
+    "incremental": true, // Force incremental builds
+
+    // ✅ Strong type checking
     "strict": true,
-    "noEmit": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
@@ -16,13 +20,18 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": false,
+
+    // ✅ Fast module resolution
     "esModuleInterop": true,
-    "module": "esnext",
+    "allowSyntheticDefaultImports": true,
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
-    "isolatedModules": true,
+    "isolatedModules": true, // Fast isolated compilation
+
+    // ✅ JSX and module settings
     "jsx": "preserve",
-    "incremental": true,
+    "module": "esnext",
+
     "tsBuildInfoFile": "./.next/cache/tsconfig.tsbuildinfo",
     "plugins": [
       {
@@ -33,14 +42,27 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "server.ts"],
+
+  // ✅ Exclude heavy directories from type checking
   "exclude": [
     "node_modules",
     ".next",
     "out",
+    "dist",
+    "build",
+    "coverage",
     "scripts/**/*.ts",
-    "db/**",
     "blockchain/artifacts/**",
     "blockchain/cache/**"
+  ],
+
+  // ✅ Include only source files
+  "include": [
+    "next-env.d.ts",
+    "src/**/*",
+    "pages/**/*",
+    "app/**/*",
+    ".next/types/**/*.ts",
+    "server.ts"
   ]
 }

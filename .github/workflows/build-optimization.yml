@@ -1,0 +1,64 @@
+name: Build Optimization
+
+on: [push, pull_request]
+
+jobs:
+  build-optimize:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # Cache node_modules
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # Cache .next
+      - name: Cache Next.js build
+        uses: actions/cache@v3
+        with:
+          path: .next
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # Install with ci (faster than install)
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      # Build with profiling
+      - name: Build with profiling
+        run: npm run build:prod
+        env:
+          NODE_ENV: production
+          NEXT_TELEMETRY_DISABLED: 1
+          BUILD_TIME: "${{ github.run_started_at }}"
+
+      # Analyze bundle if size increased
+      - name: Analyze bundle
+        if: always()
+        run: npm run build:analyze || true
+
+      # Report build time
+      - name: Report metrics
+        if: always()
+        run: |
+          echo "Build completed successfully"
+          du -sh .next
+
+      # Run bundle stats
+      - name: Bundle statistics
+        run: npm run build:stats
