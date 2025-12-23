@@ -220,6 +220,9 @@ export function sanitizeSqlInput(input: any): any {
   return input;
 }
 
+// Export alias for backward compatibility
+export const validateAction = sanitizeSqlInput;
+
 // Validate file upload
 export function validateFileUpload(file: File, maxSize: number = 5 * 1024 * 1024) { // 5MB default
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
