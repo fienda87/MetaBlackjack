@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next'
 
 const config: NextConfig = {
+  // ✅ Output standalone build for Docker
+  output: 'standalone',
+
   // ✅ Enable SWC compiler (built into Next.js 13+)
   // SWC is much faster than Babel (2-10x speedup)
   swcMinify: true,
