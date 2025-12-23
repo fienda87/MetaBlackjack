@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # MetaBlackjack Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: metablackjack-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://metablackjack:${POSTGRES_PASSWORD:-changeme}@postgres:5432/metablackjack?schema=public
+      - DIRECT_URL=postgresql://metablackjack:${POSTGRES_PASSWORD:-changeme}@postgres:5432/metablackjack?schema=public
+      - REDIS_URL=redis://redis:6379
+      # Expose blockchain configuration via .env
+      - POLYGON_AMOY_RPC_URL=${POLYGON_AMOY_RPC_URL:-https://rpc-amoy.polygon.technology}
+      - NEXT_PUBLIC_GBC_TOKEN_ADDRESS=${NEXT_PUBLIC_GBC_TOKEN_ADDRESS}
+      - NEXT_PUBLIC_FAUCET_ADDRESS=${NEXT_PUBLIC_FAUCET_ADDRESS}
+      - NEXT_PUBLIC_DEPOSIT_ADDRESS=${NEXT_PUBLIC_DEPOSIT_ADDRESS}
+      - NEXT_PUBLIC_WITHDRAW_ADDRESS=${NEXT_PUBLIC_WITHDRAW_ADDRESS}
+      - BACKEND_PRIVATE_KEY=${BACKEND_PRIVATE_KEY}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CACHE_ENABLED=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - metablackjack-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: metablackjack-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=metablackjack
+      - POSTGRES_USER=metablackjack
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_INITDB_ARGS="--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metablackjack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - metablackjack-network
+    command: postgres -c shared_buffers=256MB -c max_connections=200 -c effective_cache_size=1GB
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: metablackjack-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - metablackjack-network
+
+# PgBouncer Connection Pooling (Optional - Uncomment for production-like setup)
+#  pgbouncer:
+#    image: edoburu/pgbouncer:1.23.1
+#    container_name: metablackjack-pgbouncer
+#    restart: unless-stopped
+#    environment:
+#      - POOL_MODE=transaction
+#      - MAX_CLIENT_CONN=1000
+#      - DEFAULT_POOL_SIZE=25
+#      - RESERVE_POOL_SIZE=10
+#      - RESERVE_POOL_TIMEOUT=5
+#      - ADMIN_USERS=postgres,metablackjack
+#      - DATABASES_HOST=postgres
+#      - DATABASES_PORT=5432
+#      - DATABASES_USER=metablackjack
+#      - DATABASES_DBNAME=metablackjack
+#      - DATABASES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+#    ports:
+#      - "6432:6432"
+#    depends_on:
+#      - postgres
+#    healthcheck:
+#      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 3
+#    networks:
+#      - metablackjack-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  metablackjack-network:
+    driver: bridge
