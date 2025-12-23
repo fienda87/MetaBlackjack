@@ -1,19 +1,16 @@
 # Stage 1: base
 FROM node:18-alpine AS base
-# RUN sed -i 's/https/http/g' /etc/apk/repositories && \
-#    apk add --no-cache libc6-compat curl
+RUN apk add --no-cache libc6-compat curl
 WORKDIR /app
 
 # Stage 2: deps (production dependencies)
 FROM base AS deps
 COPY package.json package-lock.json ./
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm ci --omit=dev --frozen-lockfile
 
 # Stage 3: deps-dev (all dependencies for build)
 FROM base AS deps-dev
 COPY package.json package-lock.json ./
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm ci --frozen-lockfile
 
 # Stage 4: builder
