@@ -7,6 +7,10 @@ import { rateLimitMiddleware } from '@/lib/rate-limit'
 import { corsMiddleware, getSecurityHeaders } from '@/lib/cors'
 import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
+import { executeParallel, USER_SELECT, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
+import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
+import { cacheInvalidation } from '@/lib/cache-invalidation'
+import { perfMetrics, trackApiEndpoint } from '@/lib/performance-monitor'
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
@@ -42,6 +46,9 @@ function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount:
 }
 
 export async function POST(request: NextRequest) {
+  const perfLabel = 'game:action'
+  perfMetrics.start(perfLabel)
+  
   try {
     const isDevelopment = process.env.NODE_ENV === 'development'
     
@@ -99,32 +106,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
 
-    // 🚀 PARALLEL: Get game and user simultaneously
-    const [game, user] = await Promise.all([
-      db.game.findUnique({
-        where: { id: gameId },
-        select: {
-          id: true,
-          playerId: true,
-          sessionId: true,
-          state: true,
-          playerHand: true,
-          dealerHand: true,
-          deck: true,
-          currentBet: true,
-          insuranceBet: true,
-          hasSplit: true,
-          hasSurrendered: true,
-          hasInsurance: true,
-          splitHands: true,
-          betAmount: true
+    // 🚀 CACHED + PARALLEL: Get game and user simultaneously with caching
+    const [game, user] = await executeParallel(
+      cacheGetOrFetch(
+        CACHE_STRATEGIES.GAME_STATE(gameId).key,
+        CACHE_STRATEGIES.GAME_STATE(gameId),
+        async () => {
+          return await db.game.findUnique({
+            where: { id: gameId },
+            select: GAME_SELECT.ACTION
+          })
         }
-      }),
-      db.user.findUnique({
-        where: { id: userId },
-        select: { id: true, balance: true }
-      })
-    ])
+      ),
+      cacheGetOrFetch(
+        CACHE_STRATEGIES.USER_BALANCE(userId).key,
+        CACHE_STRATEGIES.USER_BALANCE(userId),
+        async () => {
+          return await db.user.findUnique({
+            where: { id: userId },
+            select: USER_SELECT.MINIMAL
+          })
+        }
+      )
+    )
 
     if (!game) return NextResponse.json({ error: 'Game not found' }, { status: 404 })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -421,7 +425,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
-    const [updatedGameRecord] = await Promise.all([
+    const [updatedGameRecord] = await executeParallel(
       db.game.update({
         where: { id: gameId },
         data: {
@@ -444,7 +448,14 @@ export async function POST(request: NextRequest) {
         where: { id: userId },
         data: { balance: newBalance }
       }) : Promise.resolve()
-    ])
+    )
+
+    // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
+    if (finalGameState === 'ENDED') {
+      await cacheInvalidation.invalidateOnGameEnd(gameId, userId, result || 'ENDED')
+    } else {
+      await cacheInvalidation.invalidateGameData(gameId, userId, 'game_action')
+    }
 
     // 🚀 FIRE-AND-FORGET: Non-critical records (move, transaction, session stats)
     db.gameMove.create({
@@ -528,5 +539,7 @@ export async function POST(request: NextRequest) {
         headers: getSecurityHeaders()
       }
     )
+  } finally {
+    perfMetrics.end(perfLabel)
   }
 }

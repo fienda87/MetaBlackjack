@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
+import { buildSafeCursorParams, buildCursorPaginationResponse, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
+import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
+import { perfMetrics } from '@/lib/performance-monitor'
 
 export async function GET(request: NextRequest) {
+  const perfLabel = 'api:history'
+  perfMetrics.start(perfLabel)
+  
   try {
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50) // Cap at 50
+    const cursor = searchParams.get('cursor')
+    const limit = getSafeLimit(parseInt(searchParams.get('limit') || '20'))
     const resultFilter = searchParams.get('resultFilter') || 'all'
-    const offset = (page - 1) * limit
 
     if (!userId) {
-      return NextResponse.json({ games: [], sessions: [], overallStats: { totalHands: 0, totalBet: 0, totalWin: 0, netProfit: 0, winRate: 0, blackjacks: 0, busts: 0 }, pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } })
+      return NextResponse.json({ 
+        error: 'userId required' 
+      }, { status: 400 })
     }
     
     // Build where clause
@@ -22,37 +28,32 @@ export async function GET(request: NextRequest) {
       whereClause.result = resultFilter.toUpperCase()
     }
 
-    // ✅ Cache key includes pagination and filter
-    const cacheKey = `${CACHE_KEYS.HISTORY}${userId}:p${page}:l${limit}:f${resultFilter}`
-
-    // ✅ Use cache with 2 minute TTL
-    const [games, totalCount] = await getCached(
-      cacheKey,
-      () => Promise.all([
-        db.game.findMany({
+    // 🚀 CACHED: Include cursor in cache key for pagination
+    const historyStrategy = CACHE_STRATEGIES.GAME_HISTORY(userId, cursor || undefined)
+    
+    const result = await cacheGetOrFetch(
+      historyStrategy.key,
+      historyStrategy,
+      async () => {
+        // 🚀 OPTIMIZED: Use cursor pagination with explicit fields
+        const cursorParams = buildSafeCursorParams(cursor, limit)
+        
+        const games = await db.game.findMany({
           where: whereClause,
-          select: {
-            id: true,
-            createdAt: true,
-            betAmount: true,
-            result: true,
-            winAmount: true,
-            netProfit: true,
-            playerHand: true,
-            dealerHand: true,
-            sessionId: true
-          },
-          orderBy: { createdAt: 'desc' },
-          take: limit,
-          skip: offset
-        }),
-        db.game.count({ where: whereClause })
-      ]),
-      CACHE_TTL.HISTORY
+          select: GAME_SELECT.HISTORY, // Optimized field selection
+          ...cursorParams,
+          orderBy: { createdAt: 'desc' }
+        })
+        
+        // Build cursor pagination response
+        const paginated = buildCursorPaginationResponse(games, limit)
+        
+        return paginated
+      }
     )
 
     // 🚀 Minimal formatting - let client handle date formatting
-    const formattedGames = games.map(game => {
+    const formattedGames = result.data.map(game => {
       const playerHand = game.playerHand as any
       const dealerHand = game.dealerHand as any
       return {
@@ -60,32 +61,21 @@ export async function GET(request: NextRequest) {
         date: game.createdAt.toISOString(),
         betAmount: game.betAmount,
         result: game.result || 'UNKNOWN',
-        winAmount: game.winAmount || 0,
         netProfit: game.netProfit || 0,
         playerValue: playerHand?.value || 0,
         dealerValue: dealerHand?.value || 0,
         isBlackjack: playerHand?.isBlackjack || false,
-        isBust: playerHand?.isBust || false,
-        sessionId: game.sessionId
+        isBust: playerHand?.isBust || false
       }
     })
 
-    // 🚀 Simplified stats - no sessions query (optional, load separately if needed)
-    const overallStats = {
-      totalHands: totalCount,
-      totalBet: formattedGames.reduce((sum, game) => sum + game.betAmount, 0),
-      totalWin: formattedGames.filter(g => g.result === 'WIN' || g.result === 'BLACKJACK').reduce((sum, game) => sum + (game.winAmount || 0), 0),
-      netProfit: formattedGames.reduce((sum, game) => sum + (game.netProfit || 0), 0),
-      winRate: totalCount > 0 ? (formattedGames.filter(g => g.result === 'WIN' || g.result === 'BLACKJACK').length / formattedGames.length) * 100 : 0,
-      blackjacks: formattedGames.filter(g => g.isBlackjack).length,
-      busts: formattedGames.filter(g => g.isBust).length
-    }
-
     return NextResponse.json({ 
       games: formattedGames,
-      sessions: [], // Load separately for performance
-      overallStats,
-      pagination: { page, limit, total: totalCount, totalPages: Math.ceil(totalCount / limit) }
+      pagination: result.pagination
+    }, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60'
+      }
     })
   } catch (error) {
     console.error('❌ Error fetching game history:', error)
@@ -93,5 +83,7 @@ export async function GET(request: NextRequest) {
       error: 'Failed to fetch game history',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
+  } finally {
+    perfMetrics.end(perfLabel)
   }
 }

@@ -46,6 +46,10 @@ model User {
   @@index([isActive, lastLoginAt]) // Fast active users by last login
   @@index([lastLoginAt]) // Fast recent login queries
   @@index([email]) // Fast email lookup
+  
+  // 🚀 NEW: Additional optimization indexes
+  @@index([walletAddress]) // Fast wallet-based lookups
+  @@index([isActive, walletAddress]) // Fast active user wallet lookups
   @@map("users")
 }
 
@@ -93,6 +97,11 @@ model Game {
   @@index([sessionId]) // Fast session lookups
   @@index([state, createdAt]) // Fast active games queries
   @@index([result, createdAt]) // Fast result-based analytics
+  
+  // 🚀 NEW: Additional optimization indexes
+  @@index([playerId, state, createdAt]) // Composite: active player games with time filter
+  @@index([createdAt, state]) // Fast recent games filtering
+  @@index([playerId, result]) // Fast result analysis per user
   @@map("games")
 }
 
@@ -193,6 +202,10 @@ model Transaction {
   @@index([status, type]) // Fast admin queries by status and type
   @@index([referenceId]) // Fast game transaction lookup
   @@index([status, createdAt]) // Fast pending transaction queries
+  
+  // 🚀 NEW: Additional optimization indexes
+  @@index([userId, status, createdAt]) // Composite: user status-filtered transactions
+  @@index([status, createdAt]) // Fast status-based queries
   @@map("transactions")
 }
 
