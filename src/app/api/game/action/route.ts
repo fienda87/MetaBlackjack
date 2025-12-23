@@ -1,16 +1,60 @@
 // @ts-nocheck - Temporary disable type checking due to Hand interface conflicts
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { GameEngine } from '@/domain/usecases/GameEngine'
-import { splitHand, calculateGameResult } from '@/lib/game-logic'
-import { rateLimitMiddleware } from '@/lib/rate-limit'
-import { corsMiddleware, getSecurityHeaders } from '@/lib/cors'
+// Static imports for critical path (must be available immediately)
 import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
-import { executeParallel, USER_SELECT, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
-import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
-import { cacheInvalidation } from '@/lib/cache-invalidation'
-import { perfMetrics, trackApiEndpoint } from '@/lib/performance-monitor'
+import { perfMetrics } from '@/lib/performance-monitor'
+
+// Dynamic imports for heavy dependencies (loaded on demand)
+const getGameLogic = async () => {
+  const module = await import('@/lib/game-logic')
+  return {
+    GameEngine: (await import('@/domain/usecases/GameEngine')).GameEngine,
+    splitHand: module.splitHand,
+    calculateGameResult: module.calculateGameResult,
+  }
+}
+
+const getRateLimit = async () => {
+  const module = await import('@/lib/rate-limit')
+  return module.rateLimitMiddleware
+}
+
+const getCors = async () => {
+  const module = await import('@/lib/cors')
+  return {
+    corsMiddleware: module.corsMiddleware,
+    getSecurityHeaders: module.getSecurityHeaders,
+  }
+}
+
+const getQueryHelpers = async () => {
+  const module = await import('@/lib/query-helpers')
+  return {
+    executeParallel: module.executeParallel,
+    USER_SELECT: module.USER_SELECT,
+    GAME_SELECT: module.GAME_SELECT,
+    getSafeLimit: module.getSafeLimit,
+  }
+}
+
+const getCacheOperations = async () => {
+  const module = await import('@/lib/cache-operations')
+  return {
+    cacheGetOrFetch: module.cacheGetOrFetch,
+    CACHE_STRATEGIES: module.CACHE_STRATEGIES,
+  }
+}
+
+const getCacheInvalidation = async () => {
+  const module = await import('@/lib/cache-invalidation')
+  return module.cacheInvalidation
+}
+
+const getDb = async () => {
+  const module = await import('@/lib/db')
+  return module.default
+}
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
@@ -48,32 +92,39 @@ function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount:
 export async function POST(request: NextRequest) {
   const perfLabel = 'game:action'
   perfMetrics.start(perfLabel)
-  
+
   try {
     const isDevelopment = process.env.NODE_ENV === 'development'
-    
+
     // 🚀 SKIP MIDDLEWARE IN DEV for maximum speed
     let cors: any = { isAllowedOrigin: true, headers: {} }
     let rateLimit: any = { success: true, headers: {} }
     let decodedToken: any = null
-    
+
     if (!isDevelopment) {
+      // Load dependencies dynamically only when needed
+      const [corsMod, rateLimitMod, { getSecurityHeaders }] = await Promise.all([
+        getCors(),
+        getRateLimit(),
+        import('@/lib/cors')
+      ])
+
       // CORS check (production only)
-      cors = corsMiddleware(request)
+      cors = corsMod.corsMiddleware(request)
       if (cors instanceof NextResponse) return cors
       if (!cors.isAllowedOrigin) {
         return NextResponse.json({ error: 'CORS policy violation' }, { status: 403, headers: cors.headers })
       }
 
       // Rate limiting (production only)
-      rateLimit = await rateLimitMiddleware(request, 'game')
+      rateLimit = await rateLimitMod(request, 'game')
       if (!rateLimit.success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
           { status: 429, headers: { ...cors.headers, ...rateLimit.headers } }
         )
       }
-      
+
       // Authentication (production only)
       const authHeader = request.headers.get('authorization')
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -87,6 +138,23 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
       }
     }
+
+    // Load dependencies dynamically for game logic
+    const [
+      { GameEngine, splitHand, calculateGameResult },
+      { executeParallel, USER_SELECT, GAME_SELECT },
+      { cacheGetOrFetch, CACHE_STRATEGIES },
+      cacheInvalidMod,
+      db
+    ] = await Promise.all([
+      getGameLogic(),
+      getQueryHelpers(),
+      getCacheOperations(),
+      getCacheInvalidation(),
+      getDb()
+    ])
+
+    const cacheInvalidation = cacheInvalidMod
 
     // 🚀 Parse request (no sanitization in dev for speed)
     const body = await request.json()
