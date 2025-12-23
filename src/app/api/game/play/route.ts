@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { GameEngine } from '@/domain/usecases/GameEngine'
 import { GameState } from '@/domain/entities/Game'
+import { executeParallel, USER_SELECT, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
+import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
+import { cacheInvalidation } from '@/lib/cache-invalidation'
+import { perfMetrics, trackApiEndpoint } from '@/lib/performance-monitor'
 
 // 🚀 OPTIMIZED: Get or create active session with single query
 async function getOrCreateActiveSession(userId: string) {
@@ -71,6 +75,9 @@ function updateSessionStatsAsync(sessionId: string, gameResult: any, betAmount: 
 }
 
 export async function POST(request: NextRequest) {
+  const perfLabel = 'game:play'
+  perfMetrics.start(perfLabel)
+  
   try {
     const { userId, betAmount, moveType } = await request.json()
 
@@ -82,10 +89,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get user
-    const user = await db.user.findUnique({
-      where: { id: userId }
-    })
+    // 🚀 CACHED: Get user with balance from cache first
+    const userStrategy = CACHE_STRATEGIES.USER_BALANCE(userId)
+    const user = await cacheGetOrFetch(
+      userStrategy.key,
+      userStrategy,
+      async () => {
+        // 🚀 OPTIMIZED: Only fetch essential fields
+        return await db.user.findUnique({
+          where: { id: userId },
+          select: USER_SELECT.MINIMAL
+        })
+      }
+    )
 
     if (!user) {
       return NextResponse.json(
@@ -138,7 +154,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🚀 PARALLEL: Create game and update user balance simultaneously
-    const [game] = await Promise.all([
+    const [game, updatedUser] = await executeParallel(
       db.game.create({
         data: {
           playerId: userId,
@@ -166,7 +182,14 @@ export async function POST(request: NextRequest) {
         where: { id: userId },
         data: { balance: newBalance }
       })
-    ])
+    )
+
+    // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
+    if (gameState === 'ENDED') {
+      await cacheInvalidation.invalidateOnGameEnd(game.id, userId, result || 'ENDED')
+    } else {
+      await cacheInvalidation.invalidateGameData(game.id, userId, 'game_started')
+    }
 
     // 🚀 FIRE-AND-FORGET: Create move and transaction records (non-critical for game flow)
     db.gameMove.create({
@@ -224,7 +247,7 @@ export async function POST(request: NextRequest) {
         netProfit: game.netProfit,
         createdAt: game.createdAt
       },
-      userBalance: newBalance,
+      userBalance: newBalance, // Use fresh balance from DB
       timestamp: new Date().toISOString()
     })
 
@@ -237,5 +260,7 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     )
+  } finally {
+    perfMetrics.end(perfLabel)
   }
 }
