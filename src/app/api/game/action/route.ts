@@ -499,10 +499,10 @@ export async function POST(request: NextRequest) {
       db.game.update({
         where: { id: gameId },
         data: {
-          playerHand: newPlayerHand,
-          splitHands: splitHands.length > 0 ? splitHands : undefined,
-          dealerHand: newDealerHand,
-          deck,
+          playerHand: newPlayerHand as any,
+          splitHands: splitHands.length > 0 ? (splitHands as any) : undefined,
+          dealerHand: newDealerHand as any,
+          deck: deck as any,
           currentBet: updatedGame.currentBet,
           insuranceBet: updatedGame.insuranceBet,
           state: finalGameState,
