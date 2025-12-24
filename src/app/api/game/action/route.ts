@@ -88,7 +88,7 @@ function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, b
         }
       })
     })
-    .catch(err => console.error('Session stats update failed:', err))
+    .catch((err: any) => console.error('Session stats update failed:', err))
 }
 
 export async function POST(request: NextRequest) {
