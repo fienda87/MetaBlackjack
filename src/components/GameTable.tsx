@@ -96,7 +96,7 @@ MemoizedCard.displayName = 'MemoizedCard'
 const QuickBetButtons = memo(({ 
   onQuickBet, 
   balance, 
-  _currentBet, 
+  currentBet, 
   disabled 
 }: {
   onQuickBet: (amount: number) => void
