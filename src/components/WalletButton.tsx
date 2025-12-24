@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 
-export function WalletButton() {
+export default function WalletButton() {
   const [isClient, setIsClient] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const { address, isConnected } = useAccount()
