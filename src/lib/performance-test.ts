@@ -191,7 +191,7 @@ class PerformanceTester {
     perfMetrics.end('test:field:selection')
   }
 
-  generateReport(): string {
+  async generateReport(): Promise<string> {
     const passCount = this.results.filter(r => r.status === 'PASS').length
     const warnCount = this.results.filter(r => r.status === 'WARN').length
     const failCount = this.results.filter(r => r.status === 'FAIL').length
@@ -227,7 +227,7 @@ class PerformanceTester {
       })
     }
     
-    const cacheStats = getCacheStats()
+    const cacheStats = await getCacheStats()
     report += `\n💾 Cache Status:\n`
     report += `  Connected: ${cacheStats.connected ? '✅' : '❌'}\n`
     report += `  Total Keys: ${cacheStats.totalKeys}\n`
@@ -246,7 +246,7 @@ export const runPerformanceTests = async (): Promise<TestResult[]> => {
 export const generatePerformanceReport = async (): Promise<string> => {
   const tester = new PerformanceTester()
   await tester.runTests()
-  return tester.generateReport()
+  return await tester.generateReport()
 }
 
 // Quick performance check for monitoring
