@@ -55,11 +55,11 @@ const getCacheInvalidation = async () => {
 
 const getDb = async () => {
   const dbModule = await import('@/lib/db')
-  return dbModule.default
+  return dbModule.db
 }
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
-function updateSessionStatsAction(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
+function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
   db.gameSession.findUnique({ where: { id: sessionId } })
     .then(session => {
       if (!session) return
@@ -559,7 +559,7 @@ export async function POST(request: NextRequest) {
       }).catch(err => console.error('Transaction creation failed:', err))
       
       if (game.sessionId) {
-        updateSessionStatsAction(game.sessionId, { result }, updatedGame.currentBet, netProfit)
+        updateSessionStatsAction(db, game.sessionId, { result }, updatedGame.currentBet, netProfit)
       }
     }
 
