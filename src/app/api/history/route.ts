@@ -4,6 +4,8 @@ import { buildSafeCursorParams, buildCursorPaginationResponse, GAME_SELECT, getS
 import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
 import { perfMetrics } from '@/lib/performance-monitor'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   const perfLabel = 'api:history'
   perfMetrics.start(perfLabel)

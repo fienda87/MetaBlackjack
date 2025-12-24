@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/user/balance?address=0x...
  * Get user's off-chain balance by wallet address (with Redis cache)

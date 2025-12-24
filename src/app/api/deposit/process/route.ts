@@ -4,6 +4,8 @@ import { withInternalAuth } from '@/lib/internal-auth';
 import { invalidateCache, CACHE_KEYS } from '@/lib/cache-helper';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/deposit/process
  * 

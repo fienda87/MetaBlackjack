@@ -1,4 +1,6 @@
 // @ts-nocheck - Temporary disable type checking 
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { GameEngine } from '@/domain/usecases/GameEngine'

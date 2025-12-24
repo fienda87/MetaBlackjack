@@ -4,6 +4,8 @@ import { createValidationMiddleware, ValidationSchemas } from '@/lib/validation'
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { getClientIP, getUserAgent } from '@/lib/request-utils';
 
+export const dynamic = 'force-dynamic';
+
 // Rate limiting untuk login (lebih strict)
 const LOGIN_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000, // 15 menit

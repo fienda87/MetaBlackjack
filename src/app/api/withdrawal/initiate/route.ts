@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { z } from 'zod'
 
+export const dynamic = 'force-dynamic'
+
 const withdrawalSchema = z.object({
   playerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   amount: z.string().regex(/^\d+(\.\d+)?$/),
