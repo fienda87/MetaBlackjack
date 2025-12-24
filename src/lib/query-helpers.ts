@@ -208,15 +208,15 @@ export const getTimeFilter = (timeRange?: string): {
   where: { [key: string]: { gte: Date } }
 } => {
   const now = new Date()
+  const day = 24 * 60 * 60 * 1000
   const filters: Record<string, Date> = {
     '1h': new Date(now.getTime() - 60 * 60 * 1000),
-    '24h': new Date(now.getTime() - 24 * 60 * 60 * 1000),
-    '7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-    '30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    '24h': new Date(now.getTime() - day),
+    '7d': new Date(now.getTime() - 7 * day),
+    '30d': new Date(now.getTime() - 30 * day)
   }
 
-  const defaultFilter = filters['24h']
-  const selectedFilter = filters[timeRange || '24h'] ?? defaultFilter
+  const selectedFilter = filters[timeRange || '24h'] ?? filters['24h'] ?? new Date(now.getTime() - day)
 
   return {
     where: {
@@ -229,7 +229,7 @@ export const getTimeFilter = (timeRange?: string): {
 export const executeBatch = async <T>(
   operations: (() => Promise<T>)[]
 ): Promise<T[]> => {
-  return executeParallel(...operations)
+  return executeParallel(...operations.map(op => op()))
 }
 
 // Safe order by helper
