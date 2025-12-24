@@ -11,7 +11,7 @@ export function ConnectWalletButton() {
   const [isClient, setIsClient] = useState(false)
   const [backendValidated, setBackendValidated] = useState(false)
   const { address, isConnected } = useAccount()
-  const { connect, isConnecting } = useConnect()
+  const { connect, isPending: isConnecting } = useConnect()
   const { isAuthenticated, isAuthenticating, signIn, signOut } = useWeb3Auth()
 
   useEffect(() => setIsClient(true), [])
