@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -189,7 +189,7 @@ export default function StoreView() {
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0)
 
   // Fetch allowance
-  const fetchAllowance = async () => {
+  const fetchAllowance = useCallback(async () => {
     if (!address) return
     try {
       const result = await readContract(config, {
@@ -202,10 +202,10 @@ export default function StoreView() {
     } catch (error) {
       console.error('Error fetching allowance:', error)
     }
-  }
+  }, [address])
 
   // Fetch faucet info
-  const fetchFaucetInfo = async () => {
+  const fetchFaucetInfo = useCallback(async () => {
     if (!address) return
     try {
       const [claimAmt, lastClaim, cooldown] = await Promise.all([
@@ -236,7 +236,7 @@ export default function StoreView() {
     } catch (error) {
       console.error('Error fetching faucet info:', error)
     }
-  }
+  }, [address])
 
   // Approve tokens
   const handleApprove = async () => {
@@ -567,7 +567,7 @@ export default function StoreView() {
       fetchFaucetInfo()
       fetchGameBalance() // Fetch game balance on load
     }
-  }, [address, isConnected, fetchGameBalance])
+  }, [address, isConnected, fetchAllowance, fetchFaucetInfo, fetchGameBalance])
 
   // Socket.IO real-time balance updates
   useEffect(() => {
@@ -602,7 +602,7 @@ export default function StoreView() {
       storeSocket.off('blockchain:balance-updated', handleBlockchainUpdate)
       storeSocket.off('game:balance-updated', handleGameBalanceUpdate)
     }
-  }, [address, syncBothBalances, fetchGameBalance])
+  }, [address, syncBothBalances, fetchGameBalance, toast])
 
   if (!isConnected || !address) {
     return (
