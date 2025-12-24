@@ -7,11 +7,7 @@ import Redis from 'ioredis'
 import { logger } from '@/lib/logger'
 
 // Redis configuration
-const REDIS_CONFIG = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB || '0'),
+const BASE_REDIS_OPTIONS = {
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
   lazyConnect: true, // Don't connect immediately
@@ -24,6 +20,23 @@ const REDIS_CONFIG = {
   },
   connectTimeout: 2000, // 2 second timeout
   enableOfflineQueue: false // Don't queue commands when disconnected
+}
+
+const REDIS_CONFIG = {
+  ...BASE_REDIS_OPTIONS,
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  password: process.env.REDIS_PASSWORD || undefined,
+  db: parseInt(process.env.REDIS_DB || '0')
+}
+
+const createRedisClient = () => {
+  const redisUrl = process.env.REDIS_URL
+  if (redisUrl) {
+    return new Redis(redisUrl, BASE_REDIS_OPTIONS)
+  }
+
+  return new Redis(REDIS_CONFIG)
 }
 
 // Create Redis client
@@ -41,7 +54,7 @@ export async function initRedis(): Promise<Redis | null> {
   try {
     logger.info('[Redis] Attempting to connect...')
     
-    redisClient = new Redis(REDIS_CONFIG)
+    redisClient = createRedisClient()
 
     // Connection events
     redisClient.on('connect', () => {
