@@ -26,7 +26,9 @@ FROM base AS deps
 COPY package.json package-lock.json ./
 
 # Install production dependencies ONLY (no dev dependencies)
-RUN npm ci --omit=dev --frozen-lockfile
+# Use --legacy-peer-deps to handle peer dependency conflicts with fallback
+RUN npm ci --omit=dev --frozen-lockfile --legacy-peer-deps || \
+    npm ci --omit=dev --frozen-lockfile
 
 # ============================================================================
 # STAGE 3: Development Dependencies (for build)
@@ -37,7 +39,9 @@ FROM base AS deps-all
 COPY package.json package-lock.json ./
 
 # Install ALL dependencies (including dev)
-RUN npm ci --frozen-lockfile
+# Use --legacy-peer-deps to handle peer dependency conflicts with fallback
+RUN npm ci --frozen-lockfile --legacy-peer-deps || \
+    npm ci --frozen-lockfile
 
 # ============================================================================
 # STAGE 4: Builder (compile & build Next.js)
