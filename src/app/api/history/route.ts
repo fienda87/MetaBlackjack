@@ -1,10 +1,10 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { buildSafeCursorParams, buildCursorPaginationResponse, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
 import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
 import { perfMetrics } from '@/lib/performance-monitor'
 
-export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   const perfLabel = 'api:history'

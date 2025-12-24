@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { APIKeyManager, EncryptionService, AuditLogger } from '@/lib/security';
 import { checkRateLimit } from '@/lib/rate-limiter';

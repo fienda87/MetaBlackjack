@@ -1,10 +1,10 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withInternalAuth } from '@/lib/internal-auth';
 import { emitBlockchainBalanceUpdate } from '@/lib/socket-instance';
 import { z } from 'zod';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/faucet/process
