@@ -401,7 +401,7 @@ export async function POST(request: NextRequest) {
           )
         }
         updatedGame.hasSurrendered = true
-        gameState = 'SURRENDERED'
+        finalGameState = 'SURRENDERED'
         result = 'SURRENDER'
         netProfit = -Math.floor(game.currentBet / 2) // Lose half the bet
         break
