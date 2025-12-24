@@ -61,7 +61,7 @@ const getDb = async () => {
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
   db.gameSession.findUnique({ where: { id: sessionId } })
-    .then(session => {
+    .then((session: any) => {
       if (!session) return
       
       const stats = session.stats as any
