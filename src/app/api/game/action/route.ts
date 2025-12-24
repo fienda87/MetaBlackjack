@@ -210,10 +210,11 @@ export async function POST(request: NextRequest) {
     let playerCards = [...(game.playerHand as any).cards]
     let dealerCards = [...(game.dealerHand as any).cards]
     let splitHands = (game.splitHands as any[]) || []
-    
+
   // Declare variables that might be used in switch
   let result: string | null = null
   let netProfit: number = 0
+  let finalGameState = 'PLAYING'
 
     // Process action
     switch (action) {
@@ -455,9 +456,8 @@ export async function POST(request: NextRequest) {
     const newPlayerHand = GameEngine.calculateHandValue(playerCards)
     const newDealerHand = GameEngine.calculateHandValue(dealerCards)
 
-  // Determine game state
-  let finalGameState = 'PLAYING'
-  // reuse previously declared variables
+  // Reset game state for final determination
+  finalGameState = 'PLAYING'
   result = null
   netProfit = 0
 
