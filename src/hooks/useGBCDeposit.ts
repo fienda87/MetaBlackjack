@@ -142,7 +142,7 @@ export function useGBCDeposit(address?: Address) {
 
   // Check if needs approval
   const needsApproval = allowance 
-    ? allowance < parseEther('100000') // Always maintain allowance
+    ? BigInt(allowance.toString()) < parseEther('100000') // Always maintain allowance
     : true;
 
   return {
