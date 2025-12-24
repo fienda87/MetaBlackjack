@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { io } from 'socket.io-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -24,6 +25,17 @@ import { useWriteContract, useReadContract, useWaitForTransactionReceipt, useAcc
 import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import { config } from '@/web3/config'
 import { parseUnits, formatUnits, maxUint256 } from 'viem'
+
+// Initialize Socket.IO singleton for StoreView
+const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
+const storeSocket = typeof window !== 'undefined' ? io(socketUrl, {
+  path: '/socket.io',
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 5,
+  autoConnect: true
+}) : null
 
 // Contract addresses - hardcoded for client-side reliability
 const GBC_TOKEN_ADDRESS = '0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a' as `0x${string}`
@@ -559,42 +571,37 @@ export default function StoreView() {
 
   // Socket.IO real-time balance updates
   useEffect(() => {
-    if (!address) return
+    if (!address || !storeSocket) return
 
-    // Import socket dynamically
-    import('@/hooks/useSocket').then(({ io }) => {
-      if (!io) return
-
-      // Listen for blockchain balance updates (wallet balance)
-      const handleBlockchainUpdate = (data: any) => {
-        if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
-          console.log(`📡 Received blockchain balance update:`, data)
-          syncBothBalances() // Refresh both balances
-          
-          toast({
-            title: `✅ ${data.type.charAt(0).toUpperCase() + data.type.slice(1)} Confirmed!`,
-            description: `${data.amount} GBC - Transaction completed`,
-          })
-        }
+    // Listen for blockchain balance updates (wallet balance)
+    const handleBlockchainUpdate = (data: any) => {
+      if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
+        console.log(`📡 Received blockchain balance update:`, data)
+        syncBothBalances() // Refresh both balances
+        
+        toast({
+          title: `✅ ${data.type.charAt(0).toUpperCase() + data.type.slice(1)} Confirmed!`,
+          description: `${data.amount} GBC - Transaction completed`,
+        })
       }
+    }
 
-      // Listen for game balance updates (off-chain/database)
-      const handleGameBalanceUpdate = (data: any) => {
-        if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
-          console.log(`🎮 Received game balance update:`, data)
-          fetchGameBalance() // Refresh game balance only
-        }
+    // Listen for game balance updates (off-chain/database)
+    const handleGameBalanceUpdate = (data: any) => {
+      if (data.walletAddress.toLowerCase() === address.toLowerCase()) {
+        console.log(`🎮 Received game balance update:`, data)
+        fetchGameBalance() // Refresh game balance only
       }
+    }
 
-      io.on('blockchain:balance-updated', handleBlockchainUpdate)
-      io.on('game:balance-updated', handleGameBalanceUpdate)
+    storeSocket.on('blockchain:balance-updated', handleBlockchainUpdate)
+    storeSocket.on('game:balance-updated', handleGameBalanceUpdate)
 
-      // Cleanup
-      return () => {
-        io.off('blockchain:balance-updated', handleBlockchainUpdate)
-        io.off('game:balance-updated', handleGameBalanceUpdate)
-      }
-    })
+    // Cleanup
+    return () => {
+      storeSocket.off('blockchain:balance-updated', handleBlockchainUpdate)
+      storeSocket.off('game:balance-updated', handleGameBalanceUpdate)
+    }
   }, [address, syncBothBalances, fetchGameBalance])
 
   if (!isConnected || !address) {
