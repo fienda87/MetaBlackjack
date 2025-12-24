@@ -42,13 +42,16 @@ export default function WalletConnection() {
 
   // Auto-redirect to game after successful connection
   useEffect(() => {
-    if (isConnected && isCorrectNetwork && address) {
-      // Small delay to show success state before redirect
-      const timer = setTimeout(() => {
-        router.push('/')
-      }, 1500)
-      return () => clearTimeout(timer)
+    if (!isConnected || !isCorrectNetwork || !address) {
+      return
     }
+
+    // Small delay to show success state before redirect
+    const timer = setTimeout(() => {
+      router.push('/')
+    }, 1500)
+
+    return () => clearTimeout(timer)
   }, [isConnected, isCorrectNetwork, address, router])
 
   const handleConnect = async () => {
