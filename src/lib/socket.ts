@@ -227,7 +227,7 @@ export const setupSocket = (io: Server) => {
         let playerCards = [...(game.playerHand as any).cards];
         let dealerCards = [...(game.dealerHand as any).cards];
         let deck = [...game.deck as any[]];
-        let finalGameState = game.state;
+        let finalGameState: 'PLAYING' | 'ENDED' | 'SURRENDERED' | 'BETTING' | 'DEALER' | 'INSURANCE' | 'SPLIT_PLAYING' = game.state as any;
         let result: string | null = null;
         let netProfit = 0;
         
