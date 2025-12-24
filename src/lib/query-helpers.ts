@@ -208,16 +208,19 @@ export const getTimeFilter = (timeRange?: string): {
   where: { [key: string]: { gte: Date } }
 } => {
   const now = new Date()
-  const filters: { [key: string]: Date } = {
+  const filters: Record<string, Date> = {
     '1h': new Date(now.getTime() - 60 * 60 * 1000),
     '24h': new Date(now.getTime() - 24 * 60 * 60 * 1000),
     '7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
     '30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   }
-  
+
+  const defaultFilter = filters['24h']
+  const selectedFilter = filters[timeRange || '24h'] ?? defaultFilter
+
   return {
     where: {
-      createdAt: { gte: filters[timeRange || '24h'] }
+      createdAt: { gte: selectedFilter }
     }
   }
 }
