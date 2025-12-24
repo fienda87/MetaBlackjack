@@ -21,7 +21,7 @@ export const getSocketSetup = async () => {
 
 // Prisma client (only in server context)
 export const getPrismaClient = async () => {
-  return import('@/lib/db').then(m => m.default)
+  return import('@/lib/db').then(m => m.db)
 }
 
 // Cache operations (heavy caching logic)
