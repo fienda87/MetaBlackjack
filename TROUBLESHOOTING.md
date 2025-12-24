@@ -3,15 +3,123 @@
 ## Common Issues and Solutions
 
 ### Table of Contents
-1. [Docker & Container Issues](#docker-container-issues)
-2. [Database Issues](#database-issues)
-3. [Redis/Cache Issues](#redis-cache-issues)
-4. [Blockchain/RPC Issues](#blockchain-rpc-issues)
-5. [Environment Setup Issues](#environment-setup-issues)
-6. [Performance Issues](#performance-issues)
-7. [Deployment Issues](#deployment-issues)
-8. [Testing & Debugging](#testing-debugging)
-9. [Known Issues](#known-issues)
+1. [Railway Deployment Issues](#railway-deployment-issues)
+2. [Docker & Container Issues](#docker-container-issues)
+3. [Database Issues](#database-issues)
+4. [Redis/Cache Issues](#redis-cache-issues)
+5. [Blockchain/RPC Issues](#blockchain-rpc-issues)
+6. [Environment Setup Issues](#environment-setup-issues)
+7. [Performance Issues](#performance-issues)
+8. [Deployment Issues](#deployment-issues)
+9. [Testing & Debugging](#testing-debugging)
+10. [Known Issues](#known-issues)
+
+## Railway Deployment Issues
+
+### "Invalid value undefined for datasource 'db'" (Most Common Railway Error)
+
+**Error:**
+```
+Invalid value undefined for datasource "db" provided to PrismaClient constructor
+```
+
+**Symptoms:**
+- Build succeeds (TypeScript compiles ✅)
+- Fails during page data collection
+- Error occurs in /api/user route or any database access
+- Next.js build can't collect page data
+
+**Root Cause:**
+Railway deployment doesn't have PostgreSQL database configured, so DATABASE_URL environment variable is not set.
+
+**Solution:**
+
+1. **Add PostgreSQL Plugin to Railway:**
+   - Go to your Railway project dashboard
+   - Click "New Service" or "Add Service"
+   - Select "PostgreSQL" from the database options
+   - Click "Add PostgreSQL" or "Deploy"
+   - Railway will automatically:
+     - Provision a PostgreSQL database
+     - Generate DATABASE_URL environment variable
+     - Connect it to your app
+
+2. **Restart Your App:**
+   - After adding PostgreSQL, go to your app service
+   - Click "Redeploy" or push a new commit
+   - The app will now have access to DATABASE_URL
+
+3. **Verify DATABASE_URL:**
+   - Go to your app service → Variables tab
+   - You should see DATABASE_URL populated automatically
+   - Format should be: `postgresql://user:password@host.railway.app:5432/railway`
+
+4. **Run Database Migrations:**
+   - After PostgreSQL is added, run migrations:
+     - Option 1: Add to build command: `"npx prisma migrate deploy && next build"`
+     - Option 2: Run manually in Railway console: `npx prisma migrate deploy`
+
+**Detailed Guide:** See [RAILWAY.md](./RAILWAY.md) for complete Railway deployment instructions.
+
+---
+
+### "Build succeeds but page data collection fails"
+
+**Error:**
+```
+Build succeeded but failed to collect page data
+Error collecting page data for /api/user
+```
+
+**Root Cause:**
+Same as above - DATABASE_URL is not configured. The Next.js build process tries to generate static pages, which requires database access.
+
+**Solution:**
+Follow the same steps as "Invalid value undefined for datasource 'db'" above to add PostgreSQL to Railway.
+
+---
+
+### "PrismaClientInitializationError: Invalid connection string"
+
+**Error:**
+```
+PrismaClientInitializationError: Invalid connection string
+```
+
+**Root Cause:**
+DATABASE_URL is malformed or contains invalid characters.
+
+**Solution:**
+1. Go to Railway app service → Variables tab
+2. Check DATABASE_URL format:
+   ```
+   postgresql://user:password@host.railway.app:5432/database_name
+   ```
+3. If using PostgreSQL plugin, Railway auto-generates this correctly
+4. If manually set, verify:
+   - Protocol is `postgresql://` (not `postgres://`)
+   - Has username:password@host:port/database format
+   - No special characters in password that aren't URL-encoded
+
+---
+
+### "Cannot connect to database: Connection refused"
+
+**Error:**
+```
+Error: Can't reach database server at `postgres:5432`
+```
+
+**Root Cause:**
+Database hostname is set to container name (postgres) which doesn't exist in Railway environment.
+
+**Solution:**
+1. In Railway, use the auto-generated DATABASE_URL from PostgreSQL plugin
+2. Don't use `localhost` or container names like `postgres`
+3. Railway provides the correct connection string automatically
+4. Check PostgreSQL service is running (green checkmark)
+
+---
 
 ## Docker & Container Issues
 
