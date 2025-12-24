@@ -65,17 +65,17 @@ export class PerformanceMetrics {
     const count = durations.length
     const sum = durations.reduce((a, b) => a + b, 0)
     const avg = sum / count
-    const min = sorted[0]
-    const max = sorted[sorted.length - 1]
-    
+    const min = sorted[0]!
+    const max = sorted[sorted.length - 1]!
+
     const p95Index = Math.ceil(sorted.length * 0.95) - 1
     const p99Index = Math.ceil(sorted.length * 0.99) - 1
-    const p95 = sorted[p95Index] || max
-    const p99 = sorted[p99Index] || max
-    
+    const p95 = sorted[p95Index] ?? max
+    const p99 = sorted[p99Index] ?? max
+
     const slowCount = durations.filter(d => d > this.slowQueryThreshold).length
     const slowPercentage = (slowCount / count) * 100
-    
+
     let status: 'good' | 'warning' | 'critical'
     if (avg < 50 && slowPercentage < 5) {
       status = 'good'
