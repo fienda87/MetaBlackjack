@@ -164,9 +164,9 @@ export async function POST(request: NextRequest) {
           betAmount,
           currentBet: betAmount,
           state: gameState,
-          playerHand,
-          dealerHand: fullDealerHand,
-          deck,
+          playerHand: playerHand as any,
+          dealerHand: fullDealerHand as any,
+          deck: deck as any,
           gameStats: {
             wins: 0,
             losses: 0,
