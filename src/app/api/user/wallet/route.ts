@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { getCached, invalidateCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/user/wallet?address=0x...
  * Get or create user by wallet address (with Redis cache)
