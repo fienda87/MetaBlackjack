@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 // @ts-nocheck - Temporary disable type checking due to Hand interface conflicts
 
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 // Static imports for critical path (must be available immediately)
 import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
@@ -51,11 +52,6 @@ const getCacheOperations = async () => {
 const getCacheInvalidation = async () => {
   const cacheInvalidationModule = await import('@/lib/cache-invalidation')
   return cacheInvalidationModule.cacheInvalidation
-}
-
-const getDb = async () => {
-  const dbModule = await import('@/lib/db')
-  return dbModule.default
 }
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
@@ -146,14 +142,12 @@ export async function POST(request: NextRequest) {
       { GameEngine, splitHand, calculateGameResult },
       { executeParallel, USER_SELECT, GAME_SELECT },
       { cacheGetOrFetch, CACHE_STRATEGIES },
-      cacheInvalidMod,
-      db
+      cacheInvalidMod
     ] = await Promise.all([
       getGameLogic(),
       getQueryHelpers(),
       getCacheOperations(),
-      getCacheInvalidation(),
-      getDb()
+      getCacheInvalidation()
     ])
 
     const cacheInvalidation = cacheInvalidMod

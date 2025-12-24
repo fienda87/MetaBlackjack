@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { ethers } from 'ethers'
 import { z } from 'zod'
 
@@ -164,8 +165,6 @@ export async function GET(request: NextRequest) {
  * Query from Prisma database
  */
 async function getPlayerBalance(playerAddress: string) {
-  const { db } = await import('@/lib/db')
-  
   const player = await db.user.findUnique({ 
     where: { walletAddress: playerAddress.toLowerCase() },
     select: {
@@ -190,8 +189,6 @@ async function getPlayerBalance(playerAddress: string) {
  * Using transaction metadata for now
  */
 async function storeUsedNonce(nonce: number, playerAddress: string) {
-  const { db } = await import('@/lib/db')
-  
   try {
     // Normalize address
     const normalizedAddress = playerAddress.toLowerCase()
@@ -243,8 +240,6 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
  * Get player's withdrawal history
  */
 async function getWithdrawalHistory(playerAddress: string) {
-  const { db } = await import('@/lib/db')
-  
   // Find user by wallet address first
   const user = await db.user.findUnique({
     where: { walletAddress: playerAddress.toLowerCase() },
