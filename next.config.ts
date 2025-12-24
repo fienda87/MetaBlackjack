@@ -50,13 +50,13 @@ const config: NextConfig = {
     } : false,
   },
 
+  // ✅ Skip static optimization for routes with DB access
+  // This prevents build-time failures when DATABASE_URL is unavailable (e.g., Railway)
+  // Routes will render on-demand at runtime when DB connection is available
+  skipStaticOptimization: true,
+
   // ✅ Experimental optimizations (Next.js 14+)
   experimental: {
-    // Enable dynamic IO to skip static generation for routes with DB access
-    // This prevents build-time failures when DATABASE_URL is unavailable (e.g., Railway)
-    // Routes will render on-demand at runtime when DB connection is available
-    dynamicIO: true,
-
     // Uncomment when Turbopack is stable (Next.js 15+)
     // turbopack: true,
 
