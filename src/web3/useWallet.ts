@@ -154,6 +154,8 @@ export function useWallet() {
       const interval = setInterval(fetchGbcBalance, 30000)
       return () => clearInterval(interval)
     }
+    
+    return undefined
   }, [isConnected, address, isCorrectNetwork, fetchGbcBalance])
 
   const walletState: WalletState = {
