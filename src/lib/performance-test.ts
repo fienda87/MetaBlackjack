@@ -161,7 +161,7 @@ class PerformanceTester {
         select: GAME_SELECT.HISTORY,
         take: 20,
         skip: 1,
-        cursor: { id: lastGame.id },
+        cursor: lastGame ? { id: lastGame.id } : undefined,
         orderBy: { createdAt: 'desc' }
       })
     }
