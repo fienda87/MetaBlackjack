@@ -10,7 +10,6 @@ export * from './game-logic'
 export * from './request-utils'
 export * from './utils'
 export * from './validation'
-export * from './validation-schemas'
 
 // ✅ Optimized utilities
 export * from './query-helpers'
