@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Example API route showing dynamic imports pattern
  * Heavy dependencies are loaded only when needed

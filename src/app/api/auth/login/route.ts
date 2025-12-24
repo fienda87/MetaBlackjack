@@ -1,10 +1,10 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server';
 import { SecureDB, EncryptionService, AuditLogger } from '@/lib/security';
 import { createValidationMiddleware, ValidationSchemas } from '@/lib/validation';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { getClientIP, getUserAgent } from '@/lib/request-utils';
 
-export const dynamic = 'force-dynamic';
 
 // Rate limiting untuk login (lebih strict)
 const LOGIN_RATE_LIMIT = {

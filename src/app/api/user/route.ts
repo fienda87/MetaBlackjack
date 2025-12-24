@@ -1,8 +1,8 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 
-export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {

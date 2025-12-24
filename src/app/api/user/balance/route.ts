@@ -1,8 +1,8 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCached, CACHE_KEYS, CACHE_TTL } from '@/lib/cache-helper'
 
-export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/user/balance?address=0x...

@@ -1,5 +1,5 @@
-// @ts-nocheck - Temporary disable type checking 
 export const dynamic = 'force-dynamic'
+// @ts-nocheck - Temporary disable type checking 
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'

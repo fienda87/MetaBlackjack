@@ -1,5 +1,5 @@
-// @ts-nocheck - Temporary disable type checking due to Hand interface conflicts
 export const dynamic = 'force-dynamic'
+// @ts-nocheck - Temporary disable type checking due to Hand interface conflicts
 
 import { NextRequest, NextResponse } from 'next/server'
 // Static imports for critical path (must be available immediately)

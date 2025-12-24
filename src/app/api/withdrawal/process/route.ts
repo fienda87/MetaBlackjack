@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withInternalAuth } from '@/lib/internal-auth';
@@ -5,7 +6,6 @@ import { emitBlockchainBalanceUpdate, emitGameBalanceUpdate } from '@/lib/socket
 import { invalidateCache, CACHE_KEYS } from '@/lib/cache-helper';
 import { z } from 'zod';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/withdrawal/process
