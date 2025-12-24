@@ -473,8 +473,8 @@ export async function POST(request: NextRequest) {
       finalGameState = 'ENDED'
       
       const gameResult = calculateGameResult(
-        newPlayerHand,
-        newDealerHand,
+        newPlayerHand as any,
+        newDealerHand as any,
         updatedGame.currentBet,
         updatedGame.insuranceBet || 0,
         newDealerHand.isBlackjack,
