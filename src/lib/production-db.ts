@@ -1,6 +1,23 @@
 import { PrismaClient } from '@prisma/client'
 import { performance } from 'perf_hooks'
 
+// Validate DATABASE_URL before initializing PrismaClient
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL environment variable is not set.\n\n' +
+    'To fix this issue:\n' +
+    '1. If deploying to Railway: Add PostgreSQL plugin to your Railway project\n' +
+    '   - Go to Railway dashboard → Click "Create" or "Add Service"\n' +
+    '   - Select "PostgreSQL" and deploy\n' +
+    '   - DATABASE_URL will be auto-generated and available\n\n' +
+    '2. For local development: Create a .env file with DATABASE_URL\n' +
+    '   Example: DATABASE_URL="postgresql://user:password@localhost:5432/blackjack"\n\n' +
+    '3. For manual Railway setup: Add DATABASE_URL in Variables tab\n' +
+    '   Format: postgresql://user:password@host:port/database\n\n' +
+    'See RAILWAY.md and .env.example for all required environment variables.'
+  )
+}
+
 // Enhanced Prisma client for production with monitoring
 class ProductionDatabase {
   private client: PrismaClient
@@ -15,11 +32,6 @@ class ProductionDatabase {
   constructor() {
     this.client = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-      datasources: {
-        db: {
-          url: process.env.DATABASE_URL
-        }
-      }
     })
 
     this.metrics = {
