@@ -159,6 +159,44 @@ export const PAYOUT_MULTIPLIERS = {
 // Removed bonus combinations - Keep it simple per Gobog Blackjack rules
 // Only standard payouts: Blackjack 3:2, Win 1:1, Push 1:1, Insurance 2:1
 
+export interface GameResult {
+  result: 'WIN' | 'LOSE' | 'PUSH' | 'BLACKJACK' | 'SURRENDER'
+  winAmount: number
+  insuranceWin: number
+  bonusType?: string
+  bonusMultiplier?: number
+  basePayout?: number
+  totalPayout?: number
+}
+
+// Kept for backward compatibility. Gobog Blackjack rules currently do not award
+// extra bonus payouts beyond standard blackjack/insurance.
+export function checkBonusCombinations(playerHand: any[], dealerCard: any): boolean {
+  const card1 = playerHand?.[0] as Partial<Card> | undefined
+  const card2 = playerHand?.[1] as Partial<Card> | undefined
+  const dealerUpCard = dealerCard as Partial<Card> | undefined
+
+  if (!card1?.rank || !card2?.rank || !dealerUpCard?.rank) return false
+
+  // Common legacy bonus patterns (not currently paid out):
+  // - Triple 7s: player's first two cards are 7s and dealer up-card is 7
+  if (card1.rank === '7' && card2.rank === '7' && dealerUpCard.rank === '7') return true
+
+  // - Perfect pair: same rank and suit
+  if (card1.rank === card2.rank && card1.suit && card2.suit && card1.suit === card2.suit) return true
+
+  // - Flush: both player cards same suit
+  if (card1.suit && card2.suit && card1.suit === card2.suit) return true
+
+  // - Straight: consecutive ranks
+  const rankOrder: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+  const i1 = rankOrder.indexOf(card1.rank as Rank)
+  const i2 = rankOrder.indexOf(card2.rank as Rank)
+  if (i1 !== -1 && i2 !== -1 && Math.abs(i1 - i2) === 1) return true
+
+  return false
+}
+
 // Game result calculation per PAYOUT_SYSTEM.md - Gobog Blackjack Rules
 export const calculateGameResult = (
   playerHand: Hand,
@@ -167,84 +205,80 @@ export const calculateGameResult = (
   insuranceBet: number = 0,
   dealerHasBlackjack: boolean = false,
   hasSurrendered: boolean = false
-): {
-  result: 'WIN' | 'LOSE' | 'PUSH' | 'BLACKJACK' | 'SURRENDER'
-  winAmount: number
-  insuranceWin: number
-} => {
-  // Handle surrender first (return half of bet)
-  if (hasSurrendered) {
-    return { 
-      result: 'SURRENDER', 
-      winAmount: calculateSurrender(betAmount), 
-      insuranceWin: 0 
+): GameResult => {
+  const buildResult = (
+    result: GameResult['result'],
+    winAmount: number,
+    insuranceWin: number,
+    bonus?: { type: string; multiplier: number } | null
+  ): GameResult => {
+    return {
+      result,
+      winAmount,
+      insuranceWin,
+      bonusType: bonus?.type,
+      bonusMultiplier: bonus?.multiplier,
+      basePayout: winAmount,
+      totalPayout: winAmount
     }
   }
-  
+
+  // Handle surrender first (return half of bet)
+  if (hasSurrendered) {
+    const winAmount = calculateSurrender(betAmount)
+    return buildResult('SURRENDER', winAmount, 0, null)
+  }
+
   // Handle insurance (2:1 payout if dealer has blackjack)
   let insuranceWin = 0
   if (insuranceBet > 0 && dealerHasBlackjack) {
     insuranceWin = insuranceBet * PAYOUT_MULTIPLIERS.insurance // 2:1 = 2x insurance bet
   }
-  
+
+  // Gobog Blackjack currently has no additional paid bonuses.
+  const bonus = null
+
   // Player bust - lose bet
   if (playerHand.isBust) {
-    return { result: 'LOSE', winAmount: 0, insuranceWin }
+    return buildResult('LOSE', 0, insuranceWin, bonus)
   }
-  
+
   // Dealer bust - player wins (1:1 payout)
   if (dealerHand.isBust) {
-    return { 
-      result: 'WIN', 
-      winAmount: betAmount * PAYOUT_MULTIPLIERS.win, // 1:1 = bet + profit (2x total)
-      insuranceWin
-    }
+    const winAmount = betAmount * PAYOUT_MULTIPLIERS.win // 1:1 = bet + profit (2x total)
+    return buildResult('WIN', winAmount, insuranceWin, bonus)
   }
-  
+
   // Blackjack - Natural 21 with first two cards (3:2 payout)
   if (playerHand.isBlackjack && !dealerHand.isBlackjack) {
-    return { 
-      result: 'BLACKJACK', 
-      winAmount: betAmount * PAYOUT_MULTIPLIERS.blackjack, // 3:2 = bet + 1.5x profit (2.5x total)
-      insuranceWin
-    }
+    const winAmount = betAmount * PAYOUT_MULTIPLIERS.blackjack // 3:2 = bet + 1.5x profit (2.5x total)
+    return buildResult('BLACKJACK', winAmount, insuranceWin, bonus)
   }
-  
+
   // Dealer blackjack vs player non-blackjack - player loses
   if (dealerHand.isBlackjack && !playerHand.isBlackjack) {
-    return { result: 'LOSE', winAmount: 0, insuranceWin }
+    return buildResult('LOSE', 0, insuranceWin, bonus)
   }
-  
+
   // Both blackjack - push (return original bet)
   if (playerHand.isBlackjack && dealerHand.isBlackjack) {
-    return { 
-      result: 'PUSH', 
-      winAmount: betAmount * PAYOUT_MULTIPLIERS.push, // 1:1 = return bet only (1x total)
-      insuranceWin 
-    }
+    const winAmount = betAmount * PAYOUT_MULTIPLIERS.push // 1:1 = return bet only (1x total)
+    return buildResult('PUSH', winAmount, insuranceWin, bonus)
   }
-  
+
   // Compare hand values
   if (playerHand.value > dealerHand.value) {
-    // Player wins (1:1 payout)
-    return { 
-      result: 'WIN', 
-      winAmount: betAmount * PAYOUT_MULTIPLIERS.win, // 1:1 = bet + profit (2x total)
-      insuranceWin
-    }
+    const winAmount = betAmount * PAYOUT_MULTIPLIERS.win // 1:1 = bet + profit (2x total)
+    return buildResult('WIN', winAmount, insuranceWin, bonus)
   }
-  
+
   if (playerHand.value < dealerHand.value) {
-    // Dealer wins - player loses
-    return { result: 'LOSE', winAmount: 0, insuranceWin }
+    return buildResult('LOSE', 0, insuranceWin, bonus)
   }
-  
+
   // Push - tie (return original bet)
-  return { 
-    result: 'PUSH', 
-    winAmount: betAmount * PAYOUT_MULTIPLIERS.push, // 1:1 = return bet only (1x total)
-    insuranceWin 
-  }
+  const winAmount = betAmount * PAYOUT_MULTIPLIERS.push // 1:1 = return bet only (1x total)
+  return buildResult('PUSH', winAmount, insuranceWin, bonus)
 }
 
 // Check if dealer shows Ace (for insurance)
