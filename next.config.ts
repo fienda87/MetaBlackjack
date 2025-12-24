@@ -11,6 +11,9 @@ const config: NextConfig = {
   // ✅ Enable compression
   compress: true,
 
+  // ✅ Standalone output for Docker deployments
+  output: 'standalone',
+
   // ✅ Disable source maps in production (saves ~500ms build time)
   productionBrowserSourceMaps: false,
 
