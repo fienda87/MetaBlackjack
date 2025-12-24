@@ -1,94 +1,118 @@
 # syntax=docker/dockerfile:1.4
 
-# Base stage with Node.js 18 Alpine
+# ============================================================================
+# STAGE 1: Base Image
+# ============================================================================
 FROM node:18-alpine AS base
+
 LABEL maintainer="MetaBlackjack Team"
 LABEL description="MetaBlackjack - Web3 Casino Platform"
 
-# Install system dependencies required for compilation
+# Install system dependencies
 RUN apk add --no-cache \
     libc6-compat \
     curl \
+    ca-certificates \
     && rm -rf /var/cache/apk/*
 
-# Set working directory
 WORKDIR /app
 
-# Production dependencies stage
+# ============================================================================
+# STAGE 2: Production Dependencies
+# ============================================================================
 FROM base AS deps
-COPY package.json package-lock.json* ./
 
-# Use npm ci for reproducible builds
-RUN npm ci --only=production --frozen-lockfile
+# Copy only package files (package-lock.json is required)
+COPY package.json package-lock.json ./
 
-# Development dependencies stage (for build)
-FROM deps AS deps-dev
+# Install production dependencies ONLY (no dev dependencies)
+RUN npm ci --omit=dev --frozen-lockfile
+
+# ============================================================================
+# STAGE 3: Development Dependencies (for build)
+# ============================================================================
+FROM base AS deps-all
+
+# Copy only package files
+COPY package.json package-lock.json ./
+
+# Install ALL dependencies (including dev)
 RUN npm ci --frozen-lockfile
 
-# Builder stage - compile TypeScript and build Next.js
-FROM deps-dev AS builder
+# ============================================================================
+# STAGE 4: Builder (compile & build Next.js)
+# ============================================================================
+FROM deps-all AS builder
+
 WORKDIR /app
 
-# Copy application code
+# Copy source code
 COPY . .
 
-# Disable Next.js telemetry
+# Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Generate Prisma client
+RUN npx prisma generate
 
-# Optimize Prisma client generation
-RUN npx prisma generate --no-engine
-
-# Build the application
+# Build Next.js application
 RUN npm run build
 
-# Production runtime stage - minimal image
+# ============================================================================
+# STAGE 5: Production Runtime
+# ============================================================================
 FROM base AS runner
 LABEL stage="production"
-
-# Install curl for health checks
-RUN apk add --no-cache curl
-
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
 
 WORKDIR /app
 
 # Set production environment
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 # Create necessary directories
 RUN mkdir -p /app/public /app/.next/cache /app/logs
 
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy production dependencies from deps stage (includes tsx)
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy server.ts
+COPY --chown=nextjs:nodejs server.ts ./
+
 # Copy built application from builder stage
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/prisma ./prisma
 
-# Copy Prisma client and schema
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Copy Prisma client from builder
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
-# Health check script
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+# Set proper ownership
+RUN chown -R nextjs:nodejs /app
 
 # Switch to non-root user
 USER nextjs
 
-# Expose application port
 EXPOSE 3000
 
 # Health endpoint metadata
 LABEL health="http://localhost:3000/health"
 LABEL readiness="http://localhost:3000/ready"
 
-# Start the application
-CMD ["node", "server.js"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["npx", "tsx", "server.ts"]
