@@ -3,8 +3,10 @@
  * Provides get/set/delete operations with fallback handling
  */
 
-import { redis as redisClient, isRedisConnected } from './redis'
-import { CacheStrategy } from './cache-strategy'
+import { getRedisClient, isRedisConnected } from './redis'
+import { CacheStrategy, CACHE_STRATEGIES } from './cache-strategy'
+
+const redisClient = getRedisClient()
 
 // Cache get operation
 export const cacheGet = async <T = any>(key: string): Promise<T | null> => {
@@ -271,3 +273,6 @@ export const extractCacheMetrics = (stats: {
             stats.connected ? 'fair' : 'disabled'
   }
 }
+
+// Re-export CACHE_STRATEGIES for convenience
+export { CACHE_STRATEGIES } from './cache-strategy'

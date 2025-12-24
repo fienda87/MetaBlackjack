@@ -1,13 +1,6 @@
 import type { NextConfig } from 'next'
 
 const config: NextConfig = {
-  // ✅ Enable SWC compiler (built into Next.js 13+)
-  // SWC is much faster than Babel (2-10x speedup)
-  swcMinify: true,
-
-  // ✅ Optimize fonts
-  optimizeFonts: true,
-
   // ✅ Enable compression
   compress: true,
 
@@ -16,9 +9,6 @@ const config: NextConfig = {
 
   // ✅ Disable source maps in production (saves ~500ms build time)
   productionBrowserSourceMaps: false,
-
-  // ✅ Generate source maps only in development
-  sourceMapPathPrefix: process.env.NODE_ENV === 'development' ? '/_next/' : undefined,
 
   // ✅ Image optimization
   images: {

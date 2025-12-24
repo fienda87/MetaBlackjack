@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
-import { Game, GameResult, GameMove } from '../../../domain/entities/Game'
-import { GameEngine } from '../../../domain/usecases/GameEngine'
+import { Game, GameResult, GameMove } from '../../domain/entities/Game'
+import { GameEngine } from '../../domain/usecases/GameEngine'
 
 interface GameState {
   currentGame: Game | null

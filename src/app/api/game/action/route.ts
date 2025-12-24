@@ -7,53 +7,53 @@ import { perfMetrics } from '@/lib/performance-monitor'
 
 // Dynamic imports for heavy dependencies (loaded on demand)
 const getGameLogic = async () => {
-  const module = await import('@/lib/game-logic')
+  const gameLogicModule = await import('@/lib/game-logic')
   return {
     GameEngine: (await import('@/domain/usecases/GameEngine')).GameEngine,
-    splitHand: module.splitHand,
-    calculateGameResult: module.calculateGameResult,
+    splitHand: gameLogicModule.splitHand,
+    calculateGameResult: gameLogicModule.calculateGameResult,
   }
 }
 
 const getRateLimit = async () => {
-  const module = await import('@/lib/rate-limit')
-  return module.rateLimitMiddleware
+  const rateLimitModule = await import('@/lib/rate-limit')
+  return rateLimitModule.rateLimitMiddleware
 }
 
 const getCors = async () => {
-  const module = await import('@/lib/cors')
+  const corsModule = await import('@/lib/cors')
   return {
-    corsMiddleware: module.corsMiddleware,
-    getSecurityHeaders: module.getSecurityHeaders,
+    corsMiddleware: corsModule.corsMiddleware,
+    getSecurityHeaders: corsModule.getSecurityHeaders,
   }
 }
 
 const getQueryHelpers = async () => {
-  const module = await import('@/lib/query-helpers')
+  const queryHelpersModule = await import('@/lib/query-helpers')
   return {
-    executeParallel: module.executeParallel,
-    USER_SELECT: module.USER_SELECT,
-    GAME_SELECT: module.GAME_SELECT,
-    getSafeLimit: module.getSafeLimit,
+    executeParallel: queryHelpersModule.executeParallel,
+    USER_SELECT: queryHelpersModule.USER_SELECT,
+    GAME_SELECT: queryHelpersModule.GAME_SELECT,
+    getSafeLimit: queryHelpersModule.getSafeLimit,
   }
 }
 
 const getCacheOperations = async () => {
-  const module = await import('@/lib/cache-operations')
+  const cacheOperationsModule = await import('@/lib/cache-operations')
   return {
-    cacheGetOrFetch: module.cacheGetOrFetch,
-    CACHE_STRATEGIES: module.CACHE_STRATEGIES,
+    cacheGetOrFetch: cacheOperationsModule.cacheGetOrFetch,
+    CACHE_STRATEGIES: cacheOperationsModule.CACHE_STRATEGIES,
   }
 }
 
 const getCacheInvalidation = async () => {
-  const module = await import('@/lib/cache-invalidation')
-  return module.cacheInvalidation
+  const cacheInvalidationModule = await import('@/lib/cache-invalidation')
+  return cacheInvalidationModule.cacheInvalidation
 }
 
 const getDb = async () => {
-  const module = await import('@/lib/db')
-  return module.default
+  const dbModule = await import('@/lib/db')
+  return dbModule.default
 }
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response

@@ -65,7 +65,7 @@ export default function Home() {
       case 'wallet':
         return <SuspenseWallet onNavigateToStore={handleNavigateToStore} />
       case 'store':
-        return <SuspenseStoreView onNavigateToGame={handleNavigateToGame} />
+        return <SuspenseStoreView />
       case 'history':
         return <SuspenseGameHistory />
       case 'rules':
