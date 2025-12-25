@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
         data: {
           walletAddress: 'demo_' + Math.random().toString(36).substr(2, 9),
           username: 'Player One',
-          balance: 1000
+          balance: 0,
+          startingBalance: 0,
         }
       })
     }
@@ -173,7 +174,8 @@ export async function GET() {
         data: {
           walletAddress: 'demo_' + Math.random().toString(36).substr(2, 9),
           username: 'Player One',
-          balance: 1000
+          balance: 0,
+          startingBalance: 0,
         },
         include: {
           wallets: true,

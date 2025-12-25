@@ -8,22 +8,22 @@ const MOCK_WALLETS = [
   {
     address: '0x1234567890123456789012345678901234567890',
     username: 'TestPlayer1',
-    balance: 10000.0
+    balance: 0
   },
   {
     address: '0x9876543210987654321098765432109876543210',
     username: 'TestPlayer2', 
-    balance: 10000.0
+    balance: 0
   },
   {
     address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
     username: 'CryptoWhale',
-    balance: 10000.0
+    balance: 0
   },
   {
     address: 'test_wallet_dummy_4j5a9o8a5',
     username: 'TestDummy',
-    balance: 1000.0
+    balance: 0
   }
 ]
 

@@ -70,44 +70,31 @@ export async function POST(request: NextRequest) {
       }
 
       const balanceBefore = user.balance;
-      const balanceAfter = balanceBefore + amount;
+      const balanceAfter = user.balance; // Faucet does NOT update game balance
 
-      // Update balance and create transaction in atomic operation
-      const transaction = await db.$transaction(async (tx) => {
-        // Update user balance
-        await tx.user.update({
-          where: { id: user!.id },
-          data: {
-            balance: { increment: amount },
-            totalDeposited: { increment: amount },
+      // Create transaction record for tracking (no balance update)
+      const transaction = await db.transaction.create({
+        data: {
+          userId: user.id,
+          type: 'SIGNUP_BONUS',
+          amount,
+          balanceBefore,
+          balanceAfter,
+          status: 'COMPLETED',
+          referenceId: txHash,
+          description: `Faucet claim: ${amount} GBC (on-chain only, use Deposit to move to game balance)`,
+          metadata: {
+            blockNumber,
+            timestamp,
+            onChainAmount: amount.toString(),
+            source: 'faucet',
+            claimType: 'signup_bonus',
+            walletOnly: true, // Flag to indicate this is wallet-only, not game balance
           },
-        });
-
-        // Create transaction record
-        const newTransaction = await tx.transaction.create({
-          data: {
-            userId: user!.id,
-            type: 'SIGNUP_BONUS',
-            amount,
-            balanceBefore,
-            balanceAfter,
-            status: 'COMPLETED',
-            referenceId: txHash,
-            description: `Faucet claim: ${amount} GBC signup bonus`,
-            metadata: {
-              blockNumber,
-              timestamp,
-              onChainAmount: amount.toString(),
-              source: 'faucet',
-              claimType: 'signup_bonus',
-            },
-          },
-        });
-
-        return newTransaction;
+        },
       });
 
-      console.log(`✅ Faucet claim processed: ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
+      console.log(`✅ Faucet claim logged: ${amount} GBC added to wallet (on-chain)`);
 
       // Emit real-time balance update via Socket.IO (faucet only updates wallet, not game balance)
       emitBlockchainBalanceUpdate(normalizedAddress, 'faucet', amount, txHash);

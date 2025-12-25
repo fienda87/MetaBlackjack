@@ -254,39 +254,31 @@ export class FaucetListener {
       }
 
       const balanceBefore = user.balance;
-      const balanceAfter = balanceBefore + claimAmount;
+      const balanceAfter = user.balance; // Faucet does NOT update game balance
 
-      // Update user balance in a transaction
-      await db.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: user!.id },
-          data: {
-            balance: { increment: claimAmount },
+      // Create transaction record for tracking (no balance update)
+      await db.transaction.create({
+        data: {
+          userId: user.id,
+          type: 'SIGNUP_BONUS',
+          amount: claimAmount,
+          balanceBefore,
+          balanceAfter,
+          status: 'COMPLETED',
+          referenceId: event.transactionHash,
+          description: `Faucet claim: ${claimAmount} GBC (on-chain only, use Deposit to move to game balance)`,
+          metadata: {
+            blockNumber: event.blockNumber,
+            timestamp: event.blockTimestamp,
+            onChainAmount: event.amount.toString(),
+            source: 'faucet',
+            fallback: true,
+            walletOnly: true, // Flag to indicate this is wallet-only, not game balance
           },
-        });
-
-        await tx.transaction.create({
-          data: {
-            userId: user!.id,
-            type: 'SIGNUP_BONUS',
-            amount: claimAmount,
-            balanceBefore,
-            balanceAfter,
-            status: 'COMPLETED',
-            referenceId: event.transactionHash,
-            description: `Faucet claim: ${claimAmount} GBC`,
-            metadata: {
-              blockNumber: event.blockNumber,
-              timestamp: event.blockTimestamp,
-              onChainAmount: event.amount.toString(),
-              source: 'faucet',
-              fallback: true,
-            },
-          },
-        });
+        },
       });
 
-      console.log(`🎉 Balance updated (DB fallback): ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
+      console.log(`🎉 Faucet claim logged (DB fallback): ${claimAmount} GBC added to wallet (on-chain)`);
 
       return {
         txHash: event.transactionHash,
