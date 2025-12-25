@@ -88,6 +88,11 @@ const config: NextConfig = {
 
     // Optimize CSS loading
     optimizeCss: true,
+
+    // Skip static optimization for Railway deployment
+    // Allows dynamic routes to render at runtime with DATABASE_URL available
+    // This is the stable Next.js 15.5.9+ alternative to deprecated dynamicIO
+    skipStaticOptimization: true,
   },
 
   // ✅ Webpack customization for aggressive splitting
