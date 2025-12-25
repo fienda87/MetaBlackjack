@@ -1,7 +1,7 @@
-import { DepositListener } from './depositListener';
-import { WithdrawListener } from './withdrawListener';
-import { FaucetListener } from './faucetListener';
-import { NETWORK_CONFIG } from './config';
+import { DepositListener } from './depositListener.js';
+import { WithdrawListener } from './withdrawListener.js';
+import { FaucetListener } from './faucetListener.js';
+import { NETWORK_CONFIG } from './config.js';
 
 /**
  * Blockchain Event Listener Service

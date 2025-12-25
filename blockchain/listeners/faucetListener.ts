@@ -7,8 +7,8 @@ import {
   formatGBC,
   normalizeAddress,
   NETWORK_CONFIG
-} from './config';
-import type { FaucetClaimEvent, ProcessedTransaction } from './types';
+} from './config.js';
+import type { FaucetClaimEvent, ProcessedTransaction } from './types.js';
 
 /**
  * Faucet Claim Event Listener
