@@ -43,10 +43,9 @@ const config: NextConfig = {
   // ✅ Trailing slash configuration
   trailingSlash: false,
 
-  // ✅ Skip static optimization for Railway deployment
-  // Allows dynamic routes to render at runtime with DATABASE_URL available
-  // This is the stable Next.js 15.5.9+ alternative to deprecated dynamicIO
-  skipStaticOptimization: true,
+  // ✅ Ensure Prisma stays external to the Next.js server bundle
+  // Helps avoid bundling/runtime issues with Prisma in Route Handlers/Server Components.
+  serverExternalPackages: ['@prisma/client', 'prisma'],
 
   // ✅ Compiler optimizations
   compiler: {
