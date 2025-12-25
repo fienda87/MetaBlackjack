@@ -2,7 +2,8 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
   createProvider,
-  createWebSocketProvider,
+  getWebSocketProvider,
+  initializeWebSocketProvider,
   CONTRACT_ADDRESSES, 
   DEPOSIT_ESCROW_ABI,
   formatGBC,
@@ -16,8 +17,8 @@ import type { DepositEvent, ProcessedTransaction } from './types.js';
  * Listens to DepositEscrow contract Deposit events and updates user balance
  */
 export class DepositListener {
-  private contract: ethers.Contract;
-  private provider: ethers.JsonRpcProvider;
+  private contract: ethers.Contract | null = null;
+  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
   private isListening: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
@@ -27,16 +28,9 @@ export class DepositListener {
   private io?: any;
 
   constructor(io?: any) {
-    // Use WebSocket provider for stable event listening
-    this.provider = createWebSocketProvider() as ethers.JsonRpcProvider;
-    this.contract = new ethers.Contract(
-      CONTRACT_ADDRESSES.DEPOSIT_ESCROW,
-      DEPOSIT_ESCROW_ABI,
-      this.provider
-    );
     this.io = io;
     
-    console.log('🏗️  DepositListener initialized');
+    console.log('🏗️  DepositListener initialized (will connect on start)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
@@ -51,6 +45,22 @@ export class DepositListener {
     }
 
     try {
+      // Initialize WebSocket provider (with graceful fallback)
+      this.provider = await initializeWebSocketProvider();
+      
+      if (!this.provider) {
+        throw new Error('Failed to initialize WebSocket provider');
+      }
+
+      console.log('📍 Provider initialized:', this.provider.constructor.name);
+
+      // Create contract instance
+      this.contract = new ethers.Contract(
+        CONTRACT_ADDRESSES.DEPOSIT_ESCROW,
+        DEPOSIT_ESCROW_ABI,
+        this.provider
+      );
+
       // Verify contract is deployed
       const code = await this.provider.getCode(CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
       if (code === '0x') {
@@ -80,7 +90,7 @@ export class DepositListener {
       console.log('✅ DepositListener started successfully');
 
     } catch (error) {
-      console.error('❌ Failed to start DepositListener:', error);
+      console.error('❌ Failed to start DepositListener:', error instanceof Error ? error.message : error);
       await this.handleReconnect();
     }
   }
@@ -321,20 +331,23 @@ export class DepositListener {
    * Wait for block confirmations before processing
    */
   private async waitForConfirmations(eventBlockNumber: number): Promise<void> {
-    const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
-    
-    while (true) {
-      const currentBlock = await this.provider.getBlockNumber();
-      const confirmations = currentBlock - eventBlockNumber;
-      
-      if (confirmations >= requiredConfirmations) {
-        console.log(`✓ ${confirmations} confirmations received`);
-        break;
-      }
-      
-      console.log(`⏳ Waiting for confirmations: ${confirmations}/${requiredConfirmations}`);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-    }
+   const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
+
+   while (true) {
+     if (!this.provider) {
+       throw new Error('Provider not initialized');
+     }
+     const currentBlock = await this.provider.getBlockNumber();
+     const confirmations = currentBlock - eventBlockNumber;
+
+     if (confirmations >= requiredConfirmations) {
+       console.log(`✓ ${confirmations} confirmations received`);
+       break;
+     }
+
+     console.log(`⏳ Waiting for confirmations: ${confirmations}/${requiredConfirmations}`);
+     await new Promise(resolve => setTimeout(resolve, 3000));
+   }
   }
 
   /**
@@ -386,7 +399,9 @@ export class DepositListener {
   async stop(): Promise<void> {
     if (!this.isListening) return;
 
-    this.contract.removeAllListeners('Deposit');
+    if (this.contract) {
+      this.contract.removeAllListeners('Deposit');
+    }
     this.isListening = false;
     console.log('🛑 DepositListener stopped');
   }

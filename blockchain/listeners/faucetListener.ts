@@ -2,7 +2,8 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
   createProvider,
-  createWebSocketProvider,
+  getWebSocketProvider,
+  initializeWebSocketProvider,
   CONTRACT_ADDRESSES, 
   GBC_FAUCET_ABI,
   formatGBC,
@@ -16,8 +17,8 @@ import type { FaucetClaimEvent, ProcessedTransaction } from './types.js';
  * Listens to GBCFaucet contract Claim events and updates user balance
  */
 export class FaucetListener {
-  private contract: ethers.Contract;
-  private provider: ethers.JsonRpcProvider;
+  private contract: ethers.Contract | null = null;
+  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
   private isListening: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
@@ -27,16 +28,9 @@ export class FaucetListener {
   private io?: any;
 
   constructor(io?: any) {
-    // Use WebSocket provider for stable event listening
-    this.provider = createWebSocketProvider() as ethers.JsonRpcProvider;
-    this.contract = new ethers.Contract(
-      CONTRACT_ADDRESSES.GBC_FAUCET,
-      GBC_FAUCET_ABI,
-      this.provider
-    );
     this.io = io;
     
-    console.log('🏗️  FaucetListener initialized');
+    console.log('🏗️  FaucetListener initialized (will connect on start)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.GBC_FAUCET);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
@@ -51,6 +45,22 @@ export class FaucetListener {
     }
 
     try {
+      // Initialize WebSocket provider (with graceful fallback)
+      this.provider = await initializeWebSocketProvider();
+      
+      if (!this.provider) {
+        throw new Error('Failed to initialize WebSocket provider');
+      }
+
+      console.log('📍 Provider initialized:', this.provider.constructor.name);
+
+      // Create contract instance
+      this.contract = new ethers.Contract(
+        CONTRACT_ADDRESSES.GBC_FAUCET,
+        GBC_FAUCET_ABI,
+        this.provider
+      );
+
       // Verify contract is deployed
       const code = await this.provider.getCode(CONTRACT_ADDRESSES.GBC_FAUCET);
       if (code === '0x') {
@@ -79,7 +89,7 @@ export class FaucetListener {
       console.log('✅ FaucetListener started successfully');
 
     } catch (error) {
-      console.error('❌ Failed to start FaucetListener:', error);
+      console.error('❌ Failed to start FaucetListener:', error instanceof Error ? error.message : error);
       await this.handleReconnect();
     }
   }
@@ -307,6 +317,9 @@ export class FaucetListener {
     const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
     
     while (true) {
+      if (!this.provider) {
+        throw new Error('Provider not initialized');
+      }
       const currentBlock = await this.provider.getBlockNumber();
       const confirmations = currentBlock - eventBlockNumber;
       
@@ -369,7 +382,9 @@ export class FaucetListener {
   async stop(): Promise<void> {
     if (!this.isListening) return;
 
-    this.contract.removeAllListeners('Claim');
+    if (this.contract) {
+      this.contract.removeAllListeners('Claim');
+    }
     this.isListening = false;
     console.log('🛑 FaucetListener stopped');
   }

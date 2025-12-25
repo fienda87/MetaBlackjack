@@ -2,7 +2,8 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
   createProvider,
-  createWebSocketProvider,
+  getWebSocketProvider,
+  initializeWebSocketProvider,
   CONTRACT_ADDRESSES, 
   GAME_WITHDRAW_ABI,
   formatGBC,
@@ -16,8 +17,8 @@ import type { WithdrawEvent, ProcessedTransaction } from './types.js';
  * Listens to GameWithdraw contract Withdraw events and updates user balance
  */
 export class WithdrawListener {
-  private contract: ethers.Contract;
-  private provider: ethers.JsonRpcProvider;
+  private contract: ethers.Contract | null = null;
+  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
   private isListening: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
@@ -27,16 +28,9 @@ export class WithdrawListener {
   private io?: any;
 
   constructor(io?: any) {
-    // Use WebSocket provider for stable event listening
-    this.provider = createWebSocketProvider() as ethers.JsonRpcProvider;
-    this.contract = new ethers.Contract(
-      CONTRACT_ADDRESSES.GAME_WITHDRAW,
-      GAME_WITHDRAW_ABI,
-      this.provider
-    );
     this.io = io;
     
-    console.log('🏗️  WithdrawListener initialized');
+    console.log('🏗️  WithdrawListener initialized (will connect on start)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.GAME_WITHDRAW);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
@@ -51,6 +45,22 @@ export class WithdrawListener {
     }
 
     try {
+      // Initialize WebSocket provider (with graceful fallback)
+      this.provider = await initializeWebSocketProvider();
+      
+      if (!this.provider) {
+        throw new Error('Failed to initialize WebSocket provider');
+      }
+
+      console.log('📍 Provider initialized:', this.provider.constructor.name);
+
+      // Create contract instance
+      this.contract = new ethers.Contract(
+        CONTRACT_ADDRESSES.GAME_WITHDRAW,
+        GAME_WITHDRAW_ABI,
+        this.provider
+      );
+
       // Verify contract is deployed
       const code = await this.provider.getCode(CONTRACT_ADDRESSES.GAME_WITHDRAW);
       if (code === '0x') {
@@ -81,7 +91,7 @@ export class WithdrawListener {
       console.log('✅ WithdrawListener started successfully');
 
     } catch (error) {
-      console.error('❌ Failed to start WithdrawListener:', error);
+      console.error('❌ Failed to start WithdrawListener:', error instanceof Error ? error.message : error);
       await this.handleReconnect();
     }
   }
@@ -325,6 +335,9 @@ export class WithdrawListener {
     const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
     
     while (true) {
+      if (!this.provider) {
+        throw new Error('Provider not initialized');
+      }
       const currentBlock = await this.provider.getBlockNumber();
       const confirmations = currentBlock - eventBlockNumber;
       
@@ -387,7 +400,9 @@ export class WithdrawListener {
   async stop(): Promise<void> {
     if (!this.isListening) return;
 
-    this.contract.removeAllListeners('Withdraw');
+    if (this.contract) {
+      this.contract.removeAllListeners('Withdraw');
+    }
     this.isListening = false;
     console.log('🛑 WithdrawListener stopped');
   }
