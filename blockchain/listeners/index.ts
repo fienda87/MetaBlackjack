@@ -1,7 +1,7 @@
 import { DepositListener } from './depositListener.js';
 import { WithdrawListener } from './withdrawListener.js';
 import { FaucetListener } from './faucetListener.js';
-import { NETWORK_CONFIG } from './config.js';
+import { NETWORK_CONFIG, cleanupWebSocketProvider } from './config.js';
 
 /**
  * Blockchain Event Listener Service
@@ -113,6 +113,7 @@ export class BlockchainListenerService {
     console.log('🧹 Cleaning up blockchain listeners...');
     
     await this.stopAll();
+    cleanupWebSocketProvider();
     
     console.log('✅ Cleanup complete. Exiting...');
     process.exit(0);

@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { webSocketManager } from '../providers/webSocketManager.js';
 
 /**
  * ABIs for blockchain event listening
@@ -34,7 +35,8 @@ export const NETWORK_CONFIG = {
   // Use HTTPS for read-only operations
   RPC_URL: process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology',
   // Use WSS for event listening (more stable than HTTP polling)
-  WSS_RPC_URL: process.env.POLYGON_AMOY_WSS_URL || 'wss://polygon-amoy-pokt.nodies.app',
+  // Leave empty to auto-use public fallback URLs (PublicNode → DRPC → HTTP)
+  WSS_RPC_URL: process.env.POLYGON_AMOY_WSS_URL || '',
   CHAIN_ID: 80002,
   NETWORK_NAME: 'Polygon Amoy Testnet',
   BLOCK_CONFIRMATION: 3, // Wait 3 blocks before considering transaction final
@@ -52,29 +54,27 @@ export function createProvider(): ethers.JsonRpcProvider {
 }
 
 /**
- * Create WebSocket provider for event listening (more stable than HTTP polling)
- * Falls back to HTTP if WSS is unavailable
+ * Get WebSocket provider for event listening (with graceful reconnection)
+ * Uses webSocketManager for robust multi-URL fallback + auto-reconnect
  */
-export function createWebSocketProvider(): ethers.WebSocketProvider | ethers.JsonRpcProvider {
-  try {
-    // Try WebSocket first (most stable for event listening)
-    if (NETWORK_CONFIG.WSS_RPC_URL && NETWORK_CONFIG.WSS_RPC_URL.startsWith('wss://')) {
-      console.log('🔌 Using WebSocket provider for event listening');
-      return new ethers.WebSocketProvider(NETWORK_CONFIG.WSS_RPC_URL, {
-        chainId: NETWORK_CONFIG.CHAIN_ID,
-        name: NETWORK_CONFIG.NETWORK_NAME,
-      });
-    }
-  } catch (error) {
-    console.warn('⚠️  WebSocket provider failed, falling back to HTTP:', error);
-  }
+export function getWebSocketProvider(): ethers.WebSocketProvider | ethers.JsonRpcProvider | null {
+  return webSocketManager.getProvider();
+}
 
-  // Fallback to HTTP if WebSocket not available
-  console.log('📡 Using HTTP polling provider (less stable)');
-  return new ethers.JsonRpcProvider(NETWORK_CONFIG.RPC_URL, {
-    chainId: NETWORK_CONFIG.CHAIN_ID,
-    name: NETWORK_CONFIG.NETWORK_NAME,
-  });
+/**
+ * Initialize WebSocket connection
+ * Call this once at app startup
+ */
+export async function initializeWebSocketProvider(): Promise<ethers.WebSocketProvider | ethers.JsonRpcProvider> {
+  return webSocketManager.connect();
+}
+
+/**
+ * Cleanup WebSocket connection
+ * Call this on app shutdown
+ */
+export function cleanupWebSocketProvider(): void {
+  webSocketManager.disconnect();
 }
 
 /**
