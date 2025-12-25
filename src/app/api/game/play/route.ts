@@ -1,5 +1,4 @@
 export const dynamic = 'force-dynamic'
-// @ts-nocheck - Temporary disable type checking 
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -204,7 +203,7 @@ export async function POST(request: NextRequest) {
           dealerCards: [dealerCards[0]],
           playerHandValue: playerHand.value,
           dealerHandValue: dealerHand.value
-        }
+        } as any
       }
     }).catch(err => console.error('GameMove creation failed:', err))
 
