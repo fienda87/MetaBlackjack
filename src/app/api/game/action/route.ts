@@ -1,5 +1,4 @@
 export const dynamic = 'force-dynamic'
-// @ts-nocheck - Temporary disable type checking due to Hand interface conflicts
 
 import { NextRequest, NextResponse } from 'next/server'
 // Static imports for critical path (must be available immediately)
@@ -95,13 +94,14 @@ export async function POST(request: NextRequest) {
   const perfLabel = 'game:action'
   perfMetrics.start(perfLabel)
 
+  // 🚀 SKIP MIDDLEWARE IN DEV for maximum speed
+  let cors: any = { isAllowedOrigin: true, headers: {} }
+  let rateLimit: any = { success: true, headers: {} }
+  let decodedToken: any = null
+  let getSecurityHeadersFn: any = () => ({})
+
   try {
     const isDevelopment = process.env.NODE_ENV === 'development'
-
-    // 🚀 SKIP MIDDLEWARE IN DEV for maximum speed
-    let cors: any = { isAllowedOrigin: true, headers: {} }
-    let rateLimit: any = { success: true, headers: {} }
-    let decodedToken: any = null
 
     if (!isDevelopment) {
       // Load dependencies dynamically only when needed
@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
         getRateLimit(),
         import('@/lib/cors')
       ])
+      getSecurityHeadersFn = getSecurityHeaders
 
       // CORS check (production only)
       cors = corsMod.corsMiddleware(request)
@@ -130,14 +131,14 @@ export async function POST(request: NextRequest) {
       // Authentication (production only)
       const authHeader = request.headers.get('authorization')
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
+        return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeadersFn() } })
       }
 
       const token = authHeader.substring(7)
       try {
         decodedToken = await verifyJWT(token)
       } catch {
-        return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
+        return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeadersFn() } })
       }
     }
 
@@ -505,8 +506,8 @@ export async function POST(request: NextRequest) {
           deck: deck as any,
           currentBet: updatedGame.currentBet,
           insuranceBet: updatedGame.insuranceBet,
-          state: finalGameState,
-          result,
+          state: finalGameState as any,
+          result: result as any,
           netProfit,
           hasSplit: updatedGame.hasSplit,
           hasSurrendered: updatedGame.hasSurrendered,
@@ -550,16 +551,16 @@ export async function POST(request: NextRequest) {
           userId,
           type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
           amount: Math.abs(netProfit),
-          description: `Game ${result.toLowerCase()} - Blackjack`,
+          description: `Game ${(result || '').toLowerCase()} - Blackjack`,
           balanceBefore: user.balance,
           balanceAfter: newBalance,
           status: 'COMPLETED',
           referenceId: gameId
         }
       }).catch(err => console.error('Transaction creation failed:', err))
-      
+
       if (game.sessionId) {
-        updateSessionStatsAction(db, game.sessionId, { result }, updatedGame.currentBet, netProfit)
+        updateSessionStatsAction(db, game.sessionId, { result: result || 'LOSE' }, updatedGame.currentBet, netProfit)
       }
     }
 
@@ -592,7 +593,7 @@ export async function POST(request: NextRequest) {
     }, {
       headers: {
         ...cors.headers,
-        ...getSecurityHeaders(),
+        ...getSecurityHeadersFn(),
         ...rateLimit.headers
       }
     })
@@ -600,13 +601,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Game action error:', error)
     return NextResponse.json(
-      { 
+      {
         error: 'Internal server error',
         details: error instanceof Error ? error.message : 'Unknown error'
       },
-      { 
+      {
         status: 500,
-        headers: getSecurityHeaders()
+        headers: getSecurityHeadersFn()
       }
     )
   } finally {
