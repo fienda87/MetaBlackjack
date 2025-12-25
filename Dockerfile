@@ -93,8 +93,13 @@ RUN apk add --no-cache curl
 # Copy production dependencies from deps stage (includes tsx)
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy server.ts
+# Copy server.ts and TypeScript config
 COPY --chown=nextjs:nodejs server.ts ./
+COPY --chown=nextjs:nodejs tsconfig.json ./
+
+# Copy source code needed by server.ts (socket, redis, blockchain listeners)
+COPY --chown=nextjs:nodejs src ./src
+COPY --chown=nextjs:nodejs blockchain ./blockchain
 
 # Copy built application from builder stage
 COPY --from=builder /app/public ./public
