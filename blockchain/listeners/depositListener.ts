@@ -7,8 +7,8 @@ import {
   formatGBC,
   normalizeAddress,
   NETWORK_CONFIG
-} from './config';
-import type { DepositEvent, ProcessedTransaction } from './types';
+} from './config.js';
+import type { DepositEvent, ProcessedTransaction } from './types.js';
 
 /**
  * Deposit Event Listener

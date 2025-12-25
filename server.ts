@@ -1,8 +1,8 @@
 // server.ts - Next.js Standalone + Socket.IO + Redis + Blockchain Listeners
-import { setupSocket } from './src/lib/socket';
-import { setSocketInstance } from './src/lib/socket-instance';
-import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis';
-import { initBlockchainListeners } from './blockchain/listeners';
+import { setupSocket } from './src/lib/socket.js';
+import { setSocketInstance } from './src/lib/socket-instance.js';
+import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis.js';
+import { initBlockchainListeners } from './blockchain/listeners/index.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import next from 'next';

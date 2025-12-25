@@ -7,8 +7,8 @@ import {
   formatGBC,
   normalizeAddress,
   NETWORK_CONFIG
-} from './config';
-import type { WithdrawEvent, ProcessedTransaction } from './types';
+} from './config.js';
+import type { WithdrawEvent, ProcessedTransaction } from './types.js';
 
 /**
  * Withdraw Event Listener
