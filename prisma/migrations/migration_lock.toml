@@ -1,0 +1,5 @@
+# This is your Prisma migrate lockfile,
+# please do not edit it manually
+# If you would like to update it, please delete this file and rerun migrations
+
+provider = "postgresql"
