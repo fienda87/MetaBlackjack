@@ -1,8 +1,9 @@
 import { ethers } from 'ethers';
 import { db } from '@/lib/db';
-import { 
-  createProvider, 
-  CONTRACT_ADDRESSES, 
+import {
+  createProvider,
+  createWebSocketProvider,
+  CONTRACT_ADDRESSES,
   DEPOSIT_ESCROW_ABI,
   formatGBC,
   normalizeAddress,
@@ -26,17 +27,19 @@ export class DepositListener {
   private io?: any;
 
   constructor(io?: any) {
-    this.provider = createProvider();
+    // ✅ Use WebSocket provider for stable event listening
+    this.provider = createWebSocketProvider() as ethers.JsonRpcProvider;
     this.contract = new ethers.Contract(
       CONTRACT_ADDRESSES.DEPOSIT_ESCROW,
       DEPOSIT_ESCROW_ABI,
       this.provider
     );
     this.io = io;
-    
+
     console.log('🏗️  DepositListener initialized');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
+    console.log('🔌 WSS:', NETWORK_CONFIG.WSS_RPC_URL);
   }
 
   /**
