@@ -111,26 +111,6 @@ export function useGBCDeposit(address?: Address) {
     }
   };
 
-  /**
-   * Two-step deposit process: approve then deposit
-   */
-  const depositWithApproval = async (amount: string) => {
-    // Check if approval is needed
-    const amountWei = parseEther(amount);
-    const currentAllowance = allowance ? BigInt(allowance.toString()) : BigInt(0);
-
-    if (currentAllowance < amountWei) {
-      // Need to approve first
-      await approve(amount);
-      // Wait for approval confirmation before depositing
-      return { step: 'approval', message: 'Approve in MetaMask...' };
-    }
-
-    // Already approved, can deposit directly
-    await deposit(amount);
-    return { step: 'deposit', message: 'Deposit in MetaMask...' };
-  };
-
   // Format balances
   const formattedAllowance = allowance
     ? (Number(allowance) / 1e18).toFixed(2)
@@ -140,23 +120,17 @@ export function useGBCDeposit(address?: Address) {
     ? (Number(escrowBalance) / 1e18).toFixed(2)
     : '0.00';
 
-  // Check if needs approval
-  const needsApproval = allowance 
-    ? BigInt(allowance.toString()) < parseEther('100000') // Always maintain allowance
-    : true;
-
   return {
     // State - Approve
-    allowance: allowance ? allowance.toString() : '0',
+    allowance: allowance ? BigInt(allowance.toString()) : 0n,
     formattedAllowance,
-    needsApproval,
     isApproving: isApprovePending || isApprovalConfirming,
     isApprovalConfirmed,
     approvalHash,
     approvalError: approveError || approvalConfirmError,
 
     // State - Deposit
-    escrowBalance: escrowBalance ? escrowBalance.toString() : '0',
+    escrowBalance: escrowBalance ? BigInt(escrowBalance.toString()) : 0n,
     formattedEscrowBalance,
     isDepositing: isDepositPending || isDepositConfirming,
     isDepositConfirmed,
@@ -166,13 +140,10 @@ export function useGBCDeposit(address?: Address) {
     // Actions
     approve,
     deposit,
-    depositWithApproval,
 
     // Refresh
-    refetch: async () => {
-      await refetchAllowance();
-      await refetchEscrowBalance();
-    },
+    refetchAllowance,
+    refetchEscrowBalance,
   };
 }
 
