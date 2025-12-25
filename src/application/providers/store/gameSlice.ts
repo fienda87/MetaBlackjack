@@ -10,6 +10,17 @@ interface GameState {
   balance: number
 }
 
+// Response type interfaces for thunks
+interface GameActionResponse {
+  game: any
+  userBalance: number
+}
+
+interface StartGameResponse {
+  game: any
+  userBalance: number
+}
+
 const initialState: GameState = {
   currentGame: null,
   gameHistory: [],
@@ -19,7 +30,11 @@ const initialState: GameState = {
 }
 
 // Start new game with database integration
-export const startNewGame = createAsyncThunk(
+export const startNewGame = createAsyncThunk<
+  StartGameResponse,
+  { userId: string; betAmount: number },
+  { rejectValue: string }
+>(
   'game/startNewGame',
   async ({ userId, betAmount }: { userId: string; betAmount: number }, { rejectWithValue }) => {
     try {
@@ -50,7 +65,11 @@ export const startNewGame = createAsyncThunk(
 )
 
 // Make game action (hit, stand, double_down)
-export const makeGameAction = createAsyncThunk(
+export const makeGameAction = createAsyncThunk<
+  GameActionResponse,
+  { gameId: string; action: string; userId: string },
+  { rejectValue: string }
+>(
   'game/makeGameAction',
   async ({ gameId, action, userId }: { gameId: string; action: string; userId: string }, { rejectWithValue }) => {
     try {
