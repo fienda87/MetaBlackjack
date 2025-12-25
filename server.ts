@@ -5,15 +5,31 @@ import { initRedis, getCacheStats, isRedisConnected } from './src/lib/redis.js';
 import { initBlockchainListeners } from './blockchain/listeners/index.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { execSync } from 'child_process';
 import next from 'next';
 
 const dev = process.env.NODE_ENV !== 'production';
 const currentPort = 3000;
 const hostname = '0.0.0.0';
 
+// Run Prisma migrations at startup
+async function runMigrations() {
+  try {
+    console.log('🔄 Running Prisma migrations...');
+    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
+    console.log('✅ Migrations completed successfully');
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    throw error;
+  }
+}
+
 // Custom server with Socket.IO integration
 async function createCustomServer() {
   try {
+    // Run migrations first before starting the server
+    await runMigrations();
+
     // Create Next.js app
     const nextApp = next({ 
       dev,

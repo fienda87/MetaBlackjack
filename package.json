@@ -16,7 +16,7 @@
     "dev": "nodemon --exec \"npx tsx server.ts\" --watch server.ts --watch src --ext ts,tsx,js,jsx 2>&1 | tee dev.log",
     "dev:fast": "next dev --turbo",
     "dev:no-source-maps": "NEXT_SKIP_ENV_VALIDATION=true NODE_OPTIONS='--max-old-space-size=4096' next dev",
-    "build": "DATABASE_URL='postgresql://build:build@localhost/build' npx prisma generate && npx prisma migrate deploy && next build",
+    "build": "DATABASE_URL='postgresql://build:build@localhost/build' npx prisma generate && next build",
     "build:railway": "npx prisma migrate deploy && npx prisma generate && next build",
     "build:analyze": "ANALYZE=true next build",
     "build:profile": "next build --profile",
