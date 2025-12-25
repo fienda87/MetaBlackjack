@@ -442,7 +442,8 @@ const GameTable: React.FC = memo(() => {
   // Use real game balance (off-chain from database)
   const { 
     offChainGBC,
-    fetchGameBalance, 
+    fetchGameBalance,
+    fetchGameBalanceImmediate,
     address,
     isConnected 
   } = useGameBalance()
@@ -733,14 +734,27 @@ const GameTable: React.FC = memo(() => {
         
         // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
+        const httpResult = await dispatch(makeGameAction({ 
           gameId: currentGame.id, 
           action: 'hit', 
           userId: user.id 
         }))
+        
+        // ✅ Extract and update balance from HTTP response
+        if (httpResult?.payload?.userBalance !== undefined) {
+          console.log('[GameTable] Balance updated via HTTP:', {
+            newBalance: httpResult.payload.userBalance,
+            action: 'hit',
+            gameId: currentGame.id
+          })
+          // Immediately refresh balance from database to ensure UI sync
+          fetchGameBalanceImmediate()
+        }
+        
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio])
+  }, [currentGame, user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
 
   const handleStand = useCallback(async () => {
     if (!currentGame || !user) return
@@ -783,14 +797,27 @@ const GameTable: React.FC = memo(() => {
         
         // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
+        const httpResult = await dispatch(makeGameAction({ 
           gameId: currentGame.id, 
           action: 'stand', 
           userId: user.id 
         }))
+        
+        // ✅ Extract and update balance from HTTP response
+        if (httpResult?.payload?.userBalance !== undefined) {
+          console.log('[GameTable] Balance updated via HTTP:', {
+            newBalance: httpResult.payload.userBalance,
+            action: 'stand',
+            gameId: currentGame.id
+          })
+          // Immediately refresh balance from database to ensure UI sync
+          fetchGameBalanceImmediate()
+        }
+        
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio])
+  }, [currentGame, user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
 
   const handleDoubleDown = useCallback(async () => {
     if (!currentGame || !user) return
@@ -830,14 +857,27 @@ const GameTable: React.FC = memo(() => {
       } catch (error) {
         // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
+        const httpResult = await dispatch(makeGameAction({ 
           gameId: currentGame.id, 
           action: 'double_down', 
           userId: user.id 
         }))
+        
+        // ✅ Extract and update balance from HTTP response
+        if (httpResult?.payload?.userBalance !== undefined) {
+          console.log('[GameTable] Balance updated via HTTP:', {
+            newBalance: httpResult.payload.userBalance,
+            action: 'double_down',
+            gameId: currentGame.id
+          })
+          // Immediately refresh balance from database to ensure UI sync
+          fetchGameBalanceImmediate()
+        }
+        
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, currentBalance])
+  }, [currentGame, user, dispatch, socketManager, currentBalance, fetchGameBalanceImmediate])
 
   const handleInsurance = useCallback(async () => {
     if (!currentGame || !user) return
@@ -862,13 +902,24 @@ const GameTable: React.FC = memo(() => {
       dispatch({ type: 'game/updateFromSocket', payload: result })
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
+      const httpResult = await dispatch(makeGameAction({ 
         gameId: currentGame.id, 
         action: 'insurance', 
         userId: user.id 
       }))
+      
+      // ✅ Extract and update balance from HTTP response
+      if (httpResult?.payload?.userBalance !== undefined) {
+        console.log('[GameTable] Balance updated via HTTP:', {
+          newBalance: httpResult.payload.userBalance,
+          action: 'insurance',
+          gameId: currentGame.id
+        })
+        // Immediately refresh balance from database to ensure UI sync
+        fetchGameBalanceImmediate()
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handleSplit = useCallback(async () => {
     if (!currentGame || !user) return
@@ -899,13 +950,24 @@ const GameTable: React.FC = memo(() => {
       dispatch({ type: 'game/updateFromSocket', payload: result })
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
+      const httpResult = await dispatch(makeGameAction({ 
         gameId: currentGame.id, 
         action: 'split', 
         userId: user.id 
       }))
+      
+      // ✅ Extract and update balance from HTTP response
+      if (httpResult?.payload?.userBalance !== undefined) {
+        console.log('[GameTable] Balance updated via HTTP:', {
+          newBalance: httpResult.payload.userBalance,
+          action: 'split',
+          gameId: currentGame.id
+        })
+        // Immediately refresh balance from database to ensure UI sync
+        fetchGameBalanceImmediate()
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handleSurrender = useCallback(async () => {
     if (!currentGame || !user) return
@@ -930,13 +992,24 @@ const GameTable: React.FC = memo(() => {
       dispatch({ type: 'game/updateFromSocket', payload: result })
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
+      const httpResult = await dispatch(makeGameAction({ 
         gameId: currentGame.id, 
         action: 'surrender', 
         userId: user.id 
       }))
+      
+      // ✅ Extract and update balance from HTTP response
+      if (httpResult?.payload?.userBalance !== undefined) {
+        console.log('[GameTable] Balance updated via HTTP:', {
+          newBalance: httpResult.payload.userBalance,
+          action: 'surrender',
+          gameId: currentGame.id
+        })
+        // Immediately refresh balance from database to ensure UI sync
+        fetchGameBalanceImmediate()
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handlePlayAgain = useCallback(() => {
     setShowResultModal(false)

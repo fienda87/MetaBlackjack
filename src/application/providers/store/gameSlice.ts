@@ -158,7 +158,16 @@ const gameSlice = createSlice({
       .addCase(startNewGame.fulfilled, (state, action) => {
         state.isLoading = false
         state.currentGame = action.payload.game
-        state.balance = action.payload.userBalance
+        
+        // ✅ Update balance from API response
+        if (action.payload.userBalance !== undefined) {
+          console.log('[REDUX] Balance updated from new game:', {
+            oldBalance: state.balance,
+            newBalance: action.payload.userBalance,
+            betAmount: action.payload.game.betAmount
+          })
+          state.balance = action.payload.userBalance
+        }
       })
       .addCase(startNewGame.rejected, (state, action) => {
         state.isLoading = false
@@ -174,7 +183,17 @@ const gameSlice = createSlice({
       .addCase(makeGameAction.fulfilled, (state, action) => {
         state.isLoading = false
         state.currentGame = action.payload.game
-        state.balance = action.payload.userBalance
+        
+        // ✅ Update balance from API response
+        if (action.payload.userBalance !== undefined) {
+          console.log('[REDUX] Balance updated from game action:', {
+            oldBalance: state.balance,
+            newBalance: action.payload.userBalance,
+            gameId: action.payload.game.id,
+            gameState: action.payload.game.state
+          })
+          state.balance = action.payload.userBalance
+        }
         
         // Add to history if game ended
         if (action.payload.game.state === 'ended' && action.payload.game.result) {
