@@ -1,7 +1,8 @@
 import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
-  createProvider, 
+  createProvider,
+  createWebSocketProvider,
   CONTRACT_ADDRESSES, 
   GAME_WITHDRAW_ABI,
   formatGBC,
@@ -26,7 +27,8 @@ export class WithdrawListener {
   private io?: any;
 
   constructor(io?: any) {
-    this.provider = createProvider();
+    // Use WebSocket provider for stable event listening
+    this.provider = createWebSocketProvider() as ethers.JsonRpcProvider;
     this.contract = new ethers.Contract(
       CONTRACT_ADDRESSES.GAME_WITHDRAW,
       GAME_WITHDRAW_ABI,
