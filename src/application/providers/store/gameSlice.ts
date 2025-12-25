@@ -11,7 +11,7 @@ interface GameState {
 }
 
 // Response type interfaces for thunks
-interface GameActionResponse {
+export interface GameActionResponse {
   game: any
   userBalance: number
 }

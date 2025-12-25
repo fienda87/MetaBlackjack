@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { RootState, AppDispatch } from '@/application/providers/store'
 import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/providers/store/gameSlice'
+import type { GameActionResponse } from '@/application/providers/store/gameSlice'
 import { createCardDisplay, createHiddenCard } from '@/lib/ui-helpers'
 import GameResultModal from '@/components/GameResultModal'
 import { useBalanceSync } from '@/hooks/useBalanceSync'
@@ -38,6 +39,15 @@ import { useSettingsStore } from '@/store/settingsStore'
 import { shouldSurrender } from '@/lib/game-logic'
 import { useSocket } from '@/hooks/useSocket'
 import { requestQueue } from '@/lib/optimistic-updates'
+
+const isGameActionResponse = (payload: unknown): payload is GameActionResponse => {
+  return (
+    !!payload &&
+    typeof payload === 'object' &&
+    'userBalance' in payload &&
+    typeof (payload as { userBalance?: unknown }).userBalance === 'number'
+  )
+}
 
 // Memoized card component with smaller size and dynamic animation delay
 const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: { 
@@ -741,9 +751,10 @@ const GameTable: React.FC = memo(() => {
         }))
         
         // ✅ Extract and update balance from HTTP response
-        if (httpResult?.payload?.userBalance !== undefined) {
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
-            newBalance: httpResult.payload.userBalance,
+            newBalance: payload.userBalance,
             action: 'hit',
             gameId: currentGame.id
           })
@@ -804,9 +815,10 @@ const GameTable: React.FC = memo(() => {
         }))
         
         // ✅ Extract and update balance from HTTP response
-        if (httpResult?.payload?.userBalance !== undefined) {
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
-            newBalance: httpResult.payload.userBalance,
+            newBalance: payload.userBalance,
             action: 'stand',
             gameId: currentGame.id
           })
@@ -864,9 +876,10 @@ const GameTable: React.FC = memo(() => {
         }))
         
         // ✅ Extract and update balance from HTTP response
-        if (httpResult?.payload?.userBalance !== undefined) {
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
-            newBalance: httpResult.payload.userBalance,
+            newBalance: payload.userBalance,
             action: 'double_down',
             gameId: currentGame.id
           })
@@ -909,9 +922,10 @@ const GameTable: React.FC = memo(() => {
       }))
       
       // ✅ Extract and update balance from HTTP response
-      if (httpResult?.payload?.userBalance !== undefined) {
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
-          newBalance: httpResult.payload.userBalance,
+          newBalance: payload.userBalance,
           action: 'insurance',
           gameId: currentGame.id
         })
@@ -957,9 +971,10 @@ const GameTable: React.FC = memo(() => {
       }))
       
       // ✅ Extract and update balance from HTTP response
-      if (httpResult?.payload?.userBalance !== undefined) {
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
-          newBalance: httpResult.payload.userBalance,
+          newBalance: payload.userBalance,
           action: 'split',
           gameId: currentGame.id
         })
@@ -999,9 +1014,10 @@ const GameTable: React.FC = memo(() => {
       }))
       
       // ✅ Extract and update balance from HTTP response
-      if (httpResult?.payload?.userBalance !== undefined) {
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
-          newBalance: httpResult.payload.userBalance,
+          newBalance: payload.userBalance,
           action: 'surrender',
           gameId: currentGame.id
         })
