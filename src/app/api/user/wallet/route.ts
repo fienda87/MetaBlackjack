@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
         data: {
           walletAddress: normalizedAddress,
           username: `Player ${normalizedAddress.slice(0, 6)}`,
-          balance: 1000, // Initial game balance
+          balance: 0,
+          startingBalance: 0,
         }
       })
 
@@ -98,7 +99,8 @@ export async function POST(request: NextRequest) {
       create: {
         walletAddress: normalizedAddress,
         username: username || `Player ${normalizedAddress.slice(0, 6)}`,
-        balance: 1000,
+        balance: 0,
+        startingBalance: 0,
       }
     })
 

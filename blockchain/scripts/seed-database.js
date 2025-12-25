@@ -1,4 +1,5 @@
-const { PrismaClient } = require('@prisma/client')
+import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 const db = new PrismaClient()
 
@@ -20,7 +21,7 @@ async function main() {
   const configs = [
     {
       key: 'STARTING_BALANCE',
-      value: 1000,
+      value: 0,
       description: 'Starting balance for new users in GBC'
     },
     {
@@ -49,7 +50,6 @@ async function main() {
 
   // Create demo user
   console.log('👤 Creating demo user...')
-  const bcrypt = require('bcryptjs')
   const hashedPassword = await bcrypt.hash('demo123', 10)
 
   const demoUser = await db.user.create({
@@ -57,30 +57,13 @@ async function main() {
       username: 'demoplayer',
       email: 'demo@blackjack.com',
       passwordHash: hashedPassword,
-      balance: 1000,
-      startingBalance: 1000,
+      balance: 0,
+      startingBalance: 0,
       isActive: true
     }
   })
 
   console.log(`✅ Created demo user: ${demoUser.username} with ${demoUser.balance} GBC`)
-
-  // Create signup bonus transaction for demo user
-  await db.transaction.create({
-    data: {
-      userId: demoUser.id,
-      type: 'SIGNUP_BONUS',
-      amount: 1000,
-      description: 'Welcome bonus - 1000 GBC',
-      balanceBefore: 0,
-      balanceAfter: 1000,
-      status: 'COMPLETED',
-      metadata: {
-        signupDate: new Date().toISOString(),
-        isDemoUser: true
-      }
-    }
-  })
 
   // Create sample game sessions and games
   console.log('🎮 Creating sample game data...')
@@ -186,7 +169,7 @@ async function main() {
       newValues: {
         username: demoUser.username,
         email: demoUser.email,
-        startingBalance: 1000
+        startingBalance: 0
       }
     }
   })
@@ -197,7 +180,7 @@ async function main() {
       action: 'CONFIG_UPDATED',
       resource: 'system_config',
       newValues: {
-        STARTING_BALANCE: 1000,
+        STARTING_BALANCE: 0,
         MIN_BET: 0.01,
         MAX_BET: 10
       }
@@ -209,10 +192,10 @@ async function main() {
   console.log('🎰 Demo Account Created:')
   console.log('   Email: demo@blackjack.com')
   console.log('   Password: demo123')
-  console.log('   Balance: 1000 GBC')
+  console.log('   Balance: 0 GBC (Claim faucet or deposit to play)')
   console.log('')
   console.log('⚙️ System Configuration:')
-  console.log('   Starting Balance: 1000 GBC')
+  console.log('   Starting Balance: 0 GBC')
   console.log('   Min Bet: 0.01 GBC')
   console.log('   Max Bet: 10 GBC')
   console.log('   Daily Bonus: 10 GBC')

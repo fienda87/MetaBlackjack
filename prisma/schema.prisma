@@ -16,8 +16,8 @@ model User {
   username      String?   @unique  // Optional username
   email         String?   @unique  // Optional email
   passwordHash  String?   // Optional password for non-wallet login
-  balance       Float     @default(10.0)  // Starting GBC balance
-  startingBalance Float   @default(10.0)  // Track original starting balance
+  balance       Float     @default(0.0)  // Starting GBC balance
+  startingBalance Float   @default(0.0)  // Track original starting balance
   totalDeposited Float    @default(0.0)     // Total amount deposited
   totalWithdrawn Float    @default(0.0)     // Total amount withdrawn
   isActive      Boolean   @default(true)

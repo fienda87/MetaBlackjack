@@ -209,6 +209,7 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
           walletAddress: normalizedAddress,
           username: `Player ${normalizedAddress.slice(0, 6)}`,
           balance: 0,
+          startingBalance: 0,
         },
         select: { id: true }
       })

@@ -34,7 +34,7 @@ interface User {
 
 export default function AdminPanel() {
   const [config, setConfig] = useState<Config>({
-    STARTING_BALANCE: 1000,
+    STARTING_BALANCE: 0,
     MIN_BET: 0.01,
     MAX_BET: 10,
     DAILY_BONUS: 10

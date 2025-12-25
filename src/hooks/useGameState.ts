@@ -13,7 +13,7 @@ interface GameSettings {
 }
 
 export function useGameState() {
-  const [balance, setBalance] = useState(1000)
+  const [balance, setBalance] = useState(0)
   const [settings, setSettings] = useState<GameSettings>({
     cardDealingSpeed: 1,
     soundEnabled: true,
