@@ -1,5 +1,11 @@
 import { PrismaClient } from '@prisma/client'
-import { logger } from '@/lib/logger'
+
+// Set fallback DATABASE_URL if not already set
+// This handles the Railway build phase where DATABASE_URL isn't available yet
+// At runtime, Railway will inject the real DATABASE_URL
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://fallback:fallback@localhost:5432/fallback'
+}
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | null
@@ -26,14 +32,6 @@ function getPrismaClient(): PrismaClient {
         isolationLevel: undefined, // Use default isolation level
       },
     })
-
-    // Configure connection pool for development
-    if (process.env.NODE_ENV !== 'production') {
-      // Set reasonable timeout for development
-      globalForPrisma.prisma.$connect().catch(err => {
-        logger.error('Database connection failed', err)
-      })
-    }
   }
 
   return globalForPrisma.prisma
@@ -51,7 +49,7 @@ function getPrismaClient(): PrismaClient {
  * 4. Connection errors (from missing DATABASE_URL) only occur at runtime
  */
 export const db = new Proxy({} as PrismaClient, {
-  get: (_target, prop) => {
+  get: (target, prop) => {
     const client = getPrismaClient()
     return (client as any)[prop]
   },
