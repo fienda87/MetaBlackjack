@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAccount } from 'wagmi'
+import { parseEther, formatEther } from 'viem'
 import { useGBCDeposit } from '@/hooks/useGBCDeposit'
 import { useGBCWithdraw } from '@/hooks/useGBCWithdraw'
 import { useGBCFaucet } from '@/hooks/useGBCFaucet'
@@ -11,9 +12,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  ArrowDownCircle, 
-  ArrowUpCircle, 
+import {
+  ArrowDownCircle,
+  ArrowUpCircle,
   Gift,
   Loader2,
   AlertCircle,
@@ -39,14 +40,53 @@ export default function DepositWithdrawModal() {
   // Deposit
   const [depositAmount, setDepositAmount] = useState('')
   const {
-    needsApproval,
+    allowance,
+    formattedAllowance,
     isApproving,
     isApprovalConfirmed,
     isDepositing,
     isDepositConfirmed,
     formattedEscrowBalance,
-    depositWithApproval,
+    approve,
+    deposit,
+    refetchAllowance,
   } = useGBCDeposit(address)
+
+  // Parse input amount safely
+  const inputAmount = useMemo(() => {
+    if (!depositAmount || depositAmount === '0') return 0n
+    try {
+      return parseEther(depositAmount)
+    } catch {
+      return 0n
+    }
+  }, [depositAmount])
+
+  // ✅ CORRECT: Check if allowance is ENOUGH for deposit amount
+  const isApproved = useMemo(() => {
+    const result = allowance >= inputAmount && inputAmount > 0n
+    console.log('💰 Approval Status:', {
+      depositAmount,
+      inputAmount: inputAmount.toString(),
+      currentAllowance: allowance.toString(),
+      isApproved,
+      needsApproval: inputAmount > allowance,
+    })
+    return result
+  }, [allowance, inputAmount])
+
+  // Log when deposit amount changes
+  useEffect(() => {
+    console.log('📝 Deposit amount changed:', depositAmount)
+  }, [depositAmount])
+
+  // Refresh allowance after approval is confirmed
+  useEffect(() => {
+    if (isApprovalConfirmed) {
+      console.log('✅ Approval confirmed, refreshing allowance...')
+      refetchAllowance()
+    }
+  }, [isApprovalConfirmed, refetchAllowance])
 
   // Withdraw
   const [withdrawAmount, setWithdrawAmount] = useState('')
@@ -93,6 +133,46 @@ export default function DepositWithdrawModal() {
     }
   }
 
+  // Handle approve
+  const handleApprove = async () => {
+    if (!depositAmount || !address) return
+
+    setIsProcessing(true)
+    try {
+      const amountToApprove = parseEther(depositAmount)
+
+      console.log('🔐 Requesting approval for:', {
+        amount: depositAmount,
+        amountInWei: amountToApprove.toString(),
+      })
+
+      await approve(depositAmount)
+
+      console.log('✅ Approval TX sent')
+
+      // Wait for confirmation (handled by hook)
+      toast({
+        title: 'Approval Submitted! 🔐',
+        description: `${depositAmount} GBC tokens are being approved`,
+      })
+
+      // Refresh allowance after confirmation
+      if (isApprovalConfirmed) {
+        await refetchAllowance()
+        console.log('✅ Allowance refreshed')
+      }
+    } catch (error: any) {
+      console.error('❌ Approval failed:', error)
+      toast({
+        title: 'Approval Failed',
+        description: error?.message || 'Failed to approve GBC',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // Handle deposit
   const handleDeposit = async () => {
     if (!address) {
@@ -113,6 +193,22 @@ export default function DepositWithdrawModal() {
       return
     }
 
+    // ✅ PRE-FLIGHT CHECK: Validate allowance BEFORE calling smart contract
+    if (allowance < inputAmount) {
+      console.error('❌ Pre-flight check failed:', {
+        required: inputAmount.toString(),
+        current: allowance.toString(),
+        shortfall: (inputAmount - allowance).toString(),
+      })
+
+      toast({
+        title: 'Insufficient Allowance',
+        description: `Need ${depositAmount} GBC, allowed only ${formattedAllowance} GBC. Please approve first.`,
+        variant: 'destructive',
+      })
+      return // Don't call smart contract!
+    }
+
     const gbcBalanceNum = Number(gbcBalance) / 1e18
     if (parseFloat(depositAmount) > gbcBalanceNum) {
       toast({
@@ -125,18 +221,24 @@ export default function DepositWithdrawModal() {
 
     setIsProcessing(true)
     try {
-      await depositWithApproval(depositAmount)
-      
+      console.log('💰 Depositing:', {
+        amount: depositAmount,
+        allowance: formattedAllowance,
+      })
+
+      await deposit(depositAmount)
+
       toast({
         title: 'Deposit Submitted! 💎',
         description: `${depositAmount} GBC tokens are being deposited to escrow`,
       })
-      
+
       // Reset form after success
       if (isDepositConfirmed) {
         setDepositAmount('')
       }
     } catch (error: any) {
+      console.error('❌ Deposit failed:', error)
       toast({
         title: 'Deposit Failed',
         description: error?.message || 'Failed to deposit GBC',
@@ -314,7 +416,7 @@ export default function DepositWithdrawModal() {
                 min="0"
               />
               <p className="text-xs text-gray-500">
-                Available: {formattedGBCBalance} GBC
+                Available: {formattedGBCBalance} GBC | Allowance: {formattedAllowance} GBC
               </p>
             </div>
 
@@ -329,29 +431,64 @@ export default function DepositWithdrawModal() {
                 </div>
               </div>
             ) : (
-              <Button
-                onClick={handleDeposit}
-                disabled={!depositAmount || isApproving || isDepositing || isProcessing}
-                className="w-full"
-                size="lg"
-              >
-                {isApproving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Approving...
-                  </>
-                ) : isDepositing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Depositing...
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownCircle className="w-4 h-4 mr-2" />
-                    Deposit {depositAmount || '0'} GBC
-                  </>
-                )}
-              </Button>
+              <div className="space-y-3">
+                {/* APPROVE BUTTON */}
+                <Button
+                  onClick={handleApprove}
+                  disabled={
+                    isApproved ||
+                    isApproving ||
+                    !depositAmount ||
+                    depositAmount === '0' ||
+                    isProcessing
+                  }
+                  className="w-full"
+                  size="lg"
+                  variant={isApproved ? "default" : "outline"}
+                >
+                  {isApproving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : isApproved ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      ✅ Approved ({formattedAllowance} GBC)
+                    </>
+                  ) : (
+                    <>
+                      🔓 1. Approve {depositAmount || '0'} GBC
+                    </>
+                  )}
+                </Button>
+
+                {/* DEPOSIT BUTTON */}
+                <Button
+                  onClick={handleDeposit}
+                  disabled={
+                    !isApproved ||
+                    isDepositing ||
+                    !depositAmount ||
+                    isProcessing
+                  }
+                  className="w-full"
+                  size="lg"
+                  variant={isApproved && depositAmount ? "default" : "secondary"}
+                >
+                  {isDepositing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Depositing...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownCircle className="w-4 h-4 mr-2" />
+                      💰 2. Deposit {depositAmount || '0'} GBC
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
           </TabsContent>
 
