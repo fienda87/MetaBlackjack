@@ -31,7 +31,10 @@ export const CONTRACT_ADDRESSES = {
  * Network configuration
  */
 export const NETWORK_CONFIG = {
+  // ✅ Use HTTPS for read-only operations
   RPC_URL: process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology',
+  // ✅ NEW: Use WSS for event listening (more stable)
+  WSS_RPC_URL: process.env.POLYGON_AMOY_WSS_URL || 'wss://polygon-amoy-pokt.nodies.app',
   CHAIN_ID: 80002,
   NETWORK_NAME: 'Polygon Amoy Testnet',
   BLOCK_CONFIRMATION: 3, // Wait 3 blocks before considering transaction final
@@ -42,6 +45,32 @@ export const NETWORK_CONFIG = {
  * Create provider instance
  */
 export function createProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(NETWORK_CONFIG.RPC_URL, {
+    chainId: NETWORK_CONFIG.CHAIN_ID,
+    name: NETWORK_CONFIG.NETWORK_NAME,
+  });
+}
+
+/**
+ * Create WebSocket provider for event listening (more stable than HTTP polling)
+ * Falls back to HTTP if WSS is unavailable
+ */
+export function createWebSocketProvider(): ethers.WebSocketProvider | ethers.JsonRpcProvider {
+  try {
+    // Try WebSocket first (most stable for event listening)
+    if (NETWORK_CONFIG.WSS_RPC_URL && NETWORK_CONFIG.WSS_RPC_URL.startsWith('wss://')) {
+      console.log('🔌 Using WebSocket provider for event listening');
+      return new ethers.WebSocketProvider(NETWORK_CONFIG.WSS_RPC_URL, {
+        chainId: NETWORK_CONFIG.CHAIN_ID,
+        name: NETWORK_CONFIG.NETWORK_NAME,
+      });
+    }
+  } catch (error) {
+    console.warn('⚠️  WebSocket provider failed, falling back to HTTP:', error);
+  }
+
+  // Fallback to HTTP if WebSocket not available
+  console.log('📡 Using HTTP polling provider (less stable)');
   return new ethers.JsonRpcProvider(NETWORK_CONFIG.RPC_URL, {
     chainId: NETWORK_CONFIG.CHAIN_ID,
     name: NETWORK_CONFIG.NETWORK_NAME,
