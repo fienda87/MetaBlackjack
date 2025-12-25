@@ -2,32 +2,20 @@ import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logger'
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+  prisma: PrismaClient | null
 }
 
 /**
  * Lazy-initialize Prisma client to handle missing DATABASE_URL during build time.
  * The Prisma client is only created when first accessed at runtime.
+ * This allows Next.js to build without DATABASE_URL.
+ * 
+ * PrismaClient itself doesn't validate DATABASE_URL until connection is attempted,
+ * so we can safely create it during build. The actual connection (and potential
+ * failure) only happens at runtime when database operations are executed.
  */
 function getPrismaClient(): PrismaClient {
   if (!globalForPrisma.prisma) {
-    // Validate DATABASE_URL at runtime (not at module load time)
-    if (!process.env.DATABASE_URL) {
-      throw new Error(
-        'DATABASE_URL environment variable is not set.\n\n' +
-        'To fix this issue:\n' +
-        '1. If deploying to Railway: Add PostgreSQL plugin to your Railway project\n' +
-        '   - Go to Railway dashboard → Click "Create" or "Add Service"\n' +
-        '   - Select "PostgreSQL" and deploy\n' +
-        '   - DATABASE_URL will be auto-generated and available\n\n' +
-        '2. For local development: Create a .env file with DATABASE_URL\n' +
-        '   Example: DATABASE_URL="postgresql://user:password@localhost:5432/blackjack"\n\n' +
-        '3. For manual Railway setup: Add DATABASE_URL in Variables tab\n' +
-        '   Format: postgresql://user:password@host:port/database\n\n' +
-        'See .env.example for all required environment variables.'
-      )
-    }
-
     // 🚀 ULTRA OPTIMIZED: Fast connection with increased transaction timeout
     globalForPrisma.prisma = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
@@ -48,13 +36,19 @@ function getPrismaClient(): PrismaClient {
     }
   }
 
-  return globalForPrisma.prisma!
+  return globalForPrisma.prisma
 }
 
 /**
  * Proxy-based Prisma client that defers initialization until first use.
  * This allows Next.js to build without DATABASE_URL at build time.
  * At runtime (on Railway), DATABASE_URL will be available when routes execute.
+ * 
+ * The Proxy pattern ensures:
+ * 1. No DATABASE_URL check at module load time
+ * 2. No DATABASE_URL check during Next.js page data collection
+ * 3. PrismaClient is created only when first property is accessed
+ * 4. Connection errors (from missing DATABASE_URL) only occur at runtime
  */
 export const db = new Proxy({} as PrismaClient, {
   get: (_target, prop) => {
