@@ -56,6 +56,8 @@ COPY . .
 # Set environment for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Set fallback DATABASE_URL for build time only
+ENV DATABASE_URL='postgresql://build:build@localhost/build'
 
 # Generate Prisma client
 RUN npx prisma generate
