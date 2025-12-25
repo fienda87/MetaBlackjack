@@ -36,7 +36,8 @@ export const useSocket = (playerId: string, initialBalance: number) => {
 
   useEffect(() => {
     // Connect to Socket.IO server with proper URL
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+    // Use NEXT_PUBLIC_APP_URL if set, otherwise use current origin (auto-detects domain)
+    const socketUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
     
     const socketInstance = io(socketUrl, {
       path: '/socket.io',

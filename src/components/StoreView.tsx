@@ -27,7 +27,8 @@ import { config } from '@/web3/config'
 import { parseUnits, formatUnits, maxUint256 } from 'viem'
 
 // Initialize Socket.IO singleton for StoreView
-const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
+// Use NEXT_PUBLIC_APP_URL if set, otherwise use current origin (auto-detects domain)
+const socketUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
 const storeSocket = typeof window !== 'undefined' ? io(socketUrl, {
   path: '/socket.io',
   transports: ['websocket', 'polling'],
