@@ -3,7 +3,7 @@ const { ethers } = require('ethers');
 require('dotenv').config({ path: '.env.local' });
 
 const GBC_TOKEN = "0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a";
-const DEPOSIT_ESCROW = "0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22";
+const DEPOSIT_ESCROW = "0x4c950023B40131944c7F0D116e86D046A7e7EE20";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc-amoy.polygon.technology";
 
