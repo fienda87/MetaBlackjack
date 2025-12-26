@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next'
 
+// Force Railway rebuild to pick up newly added NEXT_PUBLIC_* env vars (2025-12-26T00:00:00Z)
 const config: NextConfig = {
   // ✅ Enable compression
   compress: true,
