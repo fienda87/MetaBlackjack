@@ -87,6 +87,7 @@ class VirtualUser {
     return new Promise((resolve) => {
       this.socket = io(SERVER_URL, {
         transports: ['websocket'],
+        withCredentials: true,
         reconnection: false
       });
 

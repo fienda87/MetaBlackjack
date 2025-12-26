@@ -42,6 +42,7 @@ export const useSocket = (playerId: string, initialBalance: number) => {
     const socketInstance = io(socketUrl, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
+      withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
