@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useReadContract } from 'wagmi';
-import { CONTRACTS, FAUCET_ABI } from '@/lib/web3-config.js';
+import { CONTRACTS, FAUCET_ABI } from '@/lib/web3-config';
 import type { Address } from 'viem';
-import { useTransactionPolling } from './useTransactionPolling.js';
-import { toast } from './use-toast.js';
+import { useTransactionPolling } from './useTransactionPolling';
+import { toast } from './use-toast';
 
 /**
  * Hook to check faucet claim eligibility and claim tokens

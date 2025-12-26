@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useReadContract } from 'wagmi';
-import { CONTRACTS, WITHDRAW_ABI } from '@/lib/web3-config.js';
+import { CONTRACTS, WITHDRAW_ABI } from '@/lib/web3-config';
 import type { Address } from 'viem';
-import { useTransactionPolling } from './useTransactionPolling.js';
-import { toast } from './use-toast.js';
+import { useTransactionPolling } from './useTransactionPolling';
+import { toast } from './use-toast';
 
 /**
  * Hook to manage GBC token withdrawals from game contract

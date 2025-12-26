@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkTransactionStatus } from '@/lib/transaction-service.js';
+import { checkTransactionStatus } from '@/lib/transaction-service';
 
 export const dynamic = 'force-dynamic';
 
