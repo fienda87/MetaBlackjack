@@ -158,7 +158,8 @@ export class DBSecurity {
     return await db.transaction.create({
       data: {
         ...transactionData,
-        status: 'COMPLETED'
+        amount: transactionData.amount.toString(), // Convert to string
+        status: 'SUCCESS' // Changed from COMPLETED to SUCCESS
       } as any
     });
   }

@@ -77,10 +77,10 @@ export async function POST(request: NextRequest) {
         data: {
           userId: user.id,
           type: 'SIGNUP_BONUS',
-          amount,
+          amount: amount.toString(),
           balanceBefore,
           balanceAfter,
-          status: 'COMPLETED',
+          status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
           referenceId: txHash,
           description: `Faucet claim: ${amount} GBC (on-chain only, use Deposit to move to game balance)`,
           metadata: {

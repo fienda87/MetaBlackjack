@@ -66,12 +66,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Create transaction record
+    const balanceBefore = user.balance;
+    const balanceAfter = fromCurrency === 'GBC' ? user.balance - totalCost : user.balance + finalAmount;
+
     const transaction = await db.transaction.create({
       data: {
         userId,
         type: 'DEPOSIT',
         amount: finalAmount.toString(),
         status: 'SUCCESS',
+        balanceBefore,
+        balanceAfter,
+        referenceId: undefined,
+        description: `Store purchase: ${amount} ${fromCurrency} → ${toCurrency}`,
       }
     })
 

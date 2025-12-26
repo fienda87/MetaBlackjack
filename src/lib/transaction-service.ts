@@ -32,13 +32,17 @@ export async function createTransaction(req: TransactionRequest) {
   }
   
   // Save to database with PENDING status
+  // Note: balanceBefore/After di-set 0 dulu, nanti diupdate saat SUCCESS
   const transaction = await prisma.transaction.create({
     data: {
       userId,
       txHash,
       type,
       amount,
-      status: 'PENDING'
+      status: 'PENDING', // Hanya satu status!
+      balanceBefore: 0,
+      balanceAfter: 0,
+      description: `${type} request`
     }
   });
   
@@ -182,26 +186,9 @@ async function updateTransactionSuccess(
   confirmations: number
 ) {
   // Parse amount string to number for Float balance
-  // Assuming amount is in GBC (not wei) if we use parseEther earlier, 
-  // but wait, if it's stored in DB as Wei string, we should handle it.
-  // The ticket says "BigInt compatible", suggesting it might be Wei.
-  // However, useDeposit.ts uses amount.toString() where amount is number.
-  // If amount is "10", then parseEther("10") is 10^19.
-  // If we store "10" in the DB, then BigInt("10") is 10.
-  // If User.balance is Float, incrementing by 10 is correct if balance is in GBC.
-  
   const amountValue = parseFloat(transaction.amount);
-  
+
   await prisma.$transaction([
-    // Update transaction status
-    prisma.transaction.update({
-      where: { txHash: transaction.txHash },
-      data: {
-        status: 'SUCCESS',
-        blockNumber: receipt.blockNumber,
-        confirmations
-      }
-    }),
     // Update user balance
     prisma.user.update({
       where: { id: transaction.userId },
@@ -212,6 +199,16 @@ async function updateTransactionSuccess(
         // Also update totalDeposited/Withdrawn if applicable
         ...(transaction.type === 'DEPOSIT' ? { totalDeposited: { increment: amountValue } } : {}),
         ...(transaction.type === 'WITHDRAW' ? { totalWithdrawn: { increment: amountValue } } : {})
+      }
+    }),
+    // Update transaction status
+    prisma.transaction.update({
+      where: { txHash: transaction.txHash },
+      data: {
+        status: 'SUCCESS', // Hanya satu status!
+        blockNumber: receipt.blockNumber,
+        confirmations,
+        balanceAfter: transaction.type === 'DEPOSIT' ? transaction.user.balance + amountValue : transaction.user.balance
       }
     })
   ]);

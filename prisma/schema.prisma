@@ -184,23 +184,36 @@ model Transaction {
   id            String    @id @default(cuid())
   userId        String    @db.VarChar(255)
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  txHash        String?   @unique @db.VarChar(255)  // Blockchain transaction hash
-  type          String    @db.VarChar(50)           // DEPOSIT, WITHDRAW, FAUCET, etc
-  amount        String    @db.VarChar(255)          // Store as string (BigInt compatible)
-  
-  status        String    @db.VarChar(50)           // PENDING, SUCCESS, FAILED
-  blockNumber   Int?                                // Block number when confirmed
-  confirmations Int       @default(0)               // Number of confirmations
-  
-  errorMessage  String?   @db.Text                  // If FAILED, store error
+
+  // Gunakan String untuk Amount (BigInt compatible) dan Type
+  type          String    @db.VarChar(50)           // DEPOSIT, WITHDRAW, FAUCET, GAME_WIN, dll
+  amount        String    @db.VarChar(255)
+
+  description   String?
+  referenceId   String?   @db.VarChar(255)          // Game ID, deposit ID, etc
+
+  balanceBefore Float     // Snapshot saldo (Float ok untuk display saldo user)
+  balanceAfter  Float
+
+  status        String    @db.VarChar(50)           // PENDING, SUCCESS, FAILED (HANYA SATU!)
+
+  // Blockchain specific
+  txHash        String?   @unique @db.VarChar(255)
+  blockNumber   Int?
+  confirmations Int       @default(0)
+  errorMessage  String?   @db.Text
+
+  metadata      Json?     // Data tambahan
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  
-  @@index([userId])
+
+  // Indexes untuk performa
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, status])
   @@index([txHash])
-  @@index([status])
-  @@index([createdAt])
+  @@index([status, type])
+  @@map("transactions")
 }
 
 model CryptoPrice {

@@ -213,6 +213,10 @@ export async function POST(request: NextRequest) {
         type: gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS') : 'GAME_BET',
         amount: (gameState === 'ENDED' ? Math.abs(netProfit) : betAmount).toString(),
         status: 'SUCCESS', // Changed from COMPLETED to SUCCESS to match new status options
+        balanceBefore: user.balance,
+        balanceAfter: newBalance,
+        referenceId: game.id,
+        description: `Game ${gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'WIN' : 'LOSS') : 'BET'}: ${betAmount} GBC`,
       }
     }).catch(err => console.error('Transaction creation failed:', err))
 

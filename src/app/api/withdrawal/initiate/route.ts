@@ -221,11 +221,12 @@ async function storeUsedNonce(nonce: number, playerAddress: string) {
       data: {
         userId: user.id, // Use user.id not walletAddress
         type: 'WITHDRAWAL',
-        amount: 0, // Nonce record, not actual transaction
+        amount: '0', // Nonce record, not actual transaction - must be string
         description: `Nonce ${nonce} reserved`,
         status: 'PENDING',
         balanceBefore: 0,
         balanceAfter: 0,
+        referenceId: nonce.toString(),
         metadata: {
           nonce,
           type: 'NONCE_RESERVATION',
@@ -257,10 +258,10 @@ async function getWithdrawalHistory(playerAddress: string) {
   }
   
   return await db.transaction.findMany({
-    where: { 
+    where: {
       userId: user.id, // Use user.id not walletAddress
       type: 'WITHDRAWAL',
-      status: 'COMPLETED',
+      status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
     },
     orderBy: { createdAt: 'desc' },
     take: 50,
