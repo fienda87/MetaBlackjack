@@ -17,16 +17,14 @@ export class BlockchainListenerService {
     console.log('\n🚀 Initializing Blockchain Listener Service...');
     console.log('═'.repeat(60));
     
-    /* 
     this.depositListener = new DepositListener(io);
     this.withdrawListener = new WithdrawListener(io);
     this.faucetListener = new FaucetListener(io);
-    */
     
     console.log('═'.repeat(60));
-    console.log('⚠️  Blockchain listeners are DISABLED (using HTTP Polling instead)');
+    console.log('✅ Blockchain Listener Service initialized');
+    console.log('📦 Listeners ready for activation');
     console.log('═'.repeat(60));
-    console.log('✅ Blockchain Listener Service initialized (listeners inactive)\n');
   }
 
   /**
@@ -38,18 +36,15 @@ export class BlockchainListenerService {
       return;
     }
 
-    console.log('\n🎯 Blockchain Listener Service is in POLLING mode');
+    console.log('\n🎯 Starting Blockchain Event Listeners...');
     console.log('─'.repeat(60));
 
     try {
-      // Listeners are disabled, so we don't start them
-      /*
       await Promise.all([
         this.depositListener.start(),
         this.withdrawListener.start(),
         this.faucetListener.start(),
       ]);
-      */
 
       this.isRunning = true;
       
@@ -57,7 +52,6 @@ export class BlockchainListenerService {
       console.log('✅ All blockchain listeners started successfully!');
       console.log(`🌐 Network: ${NETWORK_CONFIG.NETWORK_NAME}`);
       console.log(`🔗 RPC: ${NETWORK_CONFIG.RPC_URL}`);
-      console.log(`⏱️  Polling interval: ${NETWORK_CONFIG.POLLING_INTERVAL}ms`);
       console.log(`✓ Block confirmations: ${NETWORK_CONFIG.BLOCK_CONFIRMATION}`);
       console.log('─'.repeat(60));
       console.log('👂 Listening for events:\n');
@@ -82,13 +76,11 @@ export class BlockchainListenerService {
 
     console.log('\n🛑 Stopping Blockchain Event Listeners...');
 
-    /*
     await Promise.all([
       this.depositListener.stop(),
       this.withdrawListener.stop(),
       this.faucetListener.stop(),
     ]);
-    */
 
     this.isRunning = false;
     console.log('✅ All blockchain listeners stopped');
@@ -101,12 +93,9 @@ export class BlockchainListenerService {
     return {
       isRunning: this.isRunning,
       listeners: {
-        polling: true,
-        /*
         deposit: this.depositListener.getStatus(),
         withdraw: this.withdrawListener.getStatus(),
         faucet: this.faucetListener.getStatus(),
-        */
       },
       network: {
         name: NETWORK_CONFIG.NETWORK_NAME,
