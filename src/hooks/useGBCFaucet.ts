@@ -1,12 +1,17 @@
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { CONTRACTS, FAUCET_ABI } from '@/lib/web3-config';
-import { parseEther } from 'viem';
+import { useState } from 'react';
+import { useReadContract } from 'wagmi';
+import { CONTRACTS, FAUCET_ABI } from '@/lib/web3-config.js';
 import type { Address } from 'viem';
+import { useTransactionPolling } from './useTransactionPolling.js';
+import { toast } from './use-toast.js';
 
 /**
  * Hook to check faucet claim eligibility and claim tokens
+ * Migrated to backend-initiated transactions with HTTP polling
  */
 export function useGBCFaucet(address?: Address) {
+  const { monitorTransaction } = useTransactionPolling();
+
   // Check if user can claim
   const { 
     data: canClaimData, 
@@ -43,32 +48,72 @@ export function useGBCFaucet(address?: Address) {
     },
   });
 
-  // Write contract for claiming
-  const { 
-    data: hash, 
-    writeContract, 
-    isPending,
-    error: writeError 
-  } = useWriteContract();
-
-  const { 
-    isLoading: isConfirming, 
-    isSuccess: isConfirmed,
-    error: confirmError 
-  } = useWaitForTransactionReceipt({
-    hash,
-  });
+  // Transaction state managed by polling
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+  const [isClaimConfirmed, setIsClaimConfirmed] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const claim = async () => {
     try {
-      await writeContract({
-        address: CONTRACTS.GBC_FAUCET,
-        abi: FAUCET_ABI,
-        functionName: 'claim',
+      if (!address) throw new Error('Wallet not connected');
+      setIsClaiming(true);
+      setIsClaimConfirmed(false);
+      setError(null);
+
+      // Step 1: Request backend to handle claim
+      const response = await fetch('/api/transaction/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: address,
+          type: 'FAUCET',
+          amount: '100' // Faucet amount is constant 100 GBC
+        })
       });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Claim request failed');
+      }
+
+      const { txHash } = await response.json();
+      setHash(txHash);
+
+      // Step 2: Start polling for confirmation
+      monitorTransaction(txHash, {
+        onSuccess: (data) => {
+          setIsClaiming(false);
+          setIsClaimConfirmed(true);
+          toast({
+            title: 'Claim Successful',
+            description: `Successfully claimed 100 GBC.`,
+          });
+          refetchCanClaim();
+          refetchNextClaimTime();
+        },
+        onFailed: (err) => {
+          setIsClaiming(false);
+          setError(new Error(err));
+          toast({
+            title: 'Claim Failed',
+            description: err,
+            variant: 'destructive',
+          });
+        }
+      });
+
+      return {
+        success: true,
+        txHash,
+        message: 'Claim initiated'
+      };
     } catch (err) {
       console.error('Claim error:', err);
-      throw err;
+      setIsClaiming(false);
+      const errorObj = err instanceof Error ? err : new Error('Claim failed');
+      setError(errorObj);
+      throw errorObj;
     }
   };
 
@@ -97,10 +142,10 @@ export function useGBCFaucet(address?: Address) {
     nextClaimDate,
 
     // Transaction state
-    isClaiming: isPending || isConfirming,
-    isClaimConfirmed: isConfirmed,
+    isClaiming,
+    isClaimConfirmed,
     hash,
-    error: writeError || confirmError,
+    error,
 
     // Actions
     claim,

@@ -70,15 +70,8 @@ export async function POST(request: NextRequest) {
           data: {
             userId: user.id,
             type: 'SIGNUP_BONUS',
-            amount: mockWallet.balance,
-            description: 'Welcome bonus for new player',
-            balanceBefore: 0,
-            balanceAfter: mockWallet.balance,
-            status: 'COMPLETED',
-            metadata: {
-              walletAddress,
-              isMock: true
-            }
+            amount: mockWallet.balance.toString(),
+            status: 'SUCCESS',
           }
         }).catch(err => console.error('Signup bonus transaction failed:', err))
       } else {

@@ -89,18 +89,11 @@ export async function POST(request: NextRequest) {
           data: {
             userId: user!.id,
             type: 'DEPOSIT',
-            amount,
-            balanceBefore,
-            balanceAfter,
-            status: 'COMPLETED',
-            referenceId: txHash,
-            description: `Deposit from blockchain: ${amount} GBC`,
-            metadata: {
-              blockNumber,
-              timestamp,
-              onChainAmount: amount.toString(),
-              source: 'blockchain',
-            },
+            amount: amount.toString(),
+            status: 'SUCCESS',
+            txHash: txHash,
+            blockNumber: blockNumber,
+            confirmations: 1,
           },
         });
 

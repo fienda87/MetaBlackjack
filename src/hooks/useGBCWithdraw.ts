@@ -1,14 +1,18 @@
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { CONTRACTS, GBC_TOKEN_ABI, WITHDRAW_ABI } from '@/lib/web3-config';
-import { parseEther } from 'viem';
+import { useState } from 'react';
+import { useReadContract } from 'wagmi';
+import { CONTRACTS, WITHDRAW_ABI } from '@/lib/web3-config.js';
 import type { Address } from 'viem';
+import { useTransactionPolling } from './useTransactionPolling.js';
+import { toast } from './use-toast.js';
 
 /**
  * Hook to manage GBC token withdrawals from game contract
- * Requires signature from backend for verification
+ * Migrated to backend-initiated transactions with HTTP polling
  */
 export function useGBCWithdraw(address?: Address) {
-  // Get player nonce to prevent replay attacks
+  const { monitorTransaction } = useTransactionPolling();
+
+  // Get player nonce
   const { 
     data: playerNonce,
     refetch: refetchNonce 
@@ -35,108 +39,74 @@ export function useGBCWithdraw(address?: Address) {
     },
   });
 
-  // Write contract for withdrawing
-  const { 
-    data: hash, 
-    writeContract, 
-    isPending,
-    error: writeError,
-    reset 
-  } = useWriteContract();
-
-  const { 
-    isLoading: isConfirming, 
-    isSuccess: isConfirmed,
-    error: confirmError 
-  } = useWaitForTransactionReceipt({
-    hash,
-  });
+  // Transaction state managed by polling
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+  const [isWithdrawConfirmed, setIsWithdrawConfirmed] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   /**
-   * Initiate withdrawal with backend signature
-   * Backend verifies game state and signs transaction
-   */
-  const initiateWithdrawal = async (amount: string) => {
-    try {
-      if (!address) {
-        throw new Error('Wallet not connected');
-      }
-
-      // Request signature from backend
-      const response = await fetch('/api/withdrawal/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerAddress: address,
-          amount,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to initiate withdrawal');
-      }
-
-      const data = await response.json();
-      return data; // { signature, nonce, finalBalance }
-    } catch (err) {
-      console.error('Initiate withdrawal error:', err);
-      throw err;
-    }
-  };
-
-  /**
-   * Submit withdrawal transaction to contract
-   */
-  const submitWithdrawal = async (
-    amount: string,
-    finalBalance: string,
-    nonce: number,
-    signature: string
-  ) => {
-    try {
-      reset();
-      await writeContract({
-        address: CONTRACTS.GAME_WITHDRAW,
-        abi: WITHDRAW_ABI,
-        functionName: 'withdraw',
-        args: [
-          parseEther(amount),
-          parseEther(finalBalance),
-          BigInt(nonce),
-          signature as `0x${string}`,
-        ],
-      });
-    } catch (err) {
-      console.error('Submit withdrawal error:', err);
-      throw err;
-    }
-  };
-
-  /**
-   * Complete withdrawal flow: get signature then submit
+   * Complete withdrawal flow: backend initiates transaction, then poll for status
    */
   const withdraw = async (amount: string) => {
     try {
-      // Step 1: Get signature from backend
-      const signatureData = await initiateWithdrawal(amount);
+      if (!address) throw new Error('Wallet not connected');
+      setIsWithdrawing(true);
+      setIsWithdrawConfirmed(false);
+      setError(null);
 
-      // Step 2: Submit to contract
-      await submitWithdrawal(
-        amount,
-        signatureData.finalBalance,
-        signatureData.nonce,
-        signatureData.signature
-      );
+      // Step 1: Request backend to handle withdrawal
+      const response = await fetch('/api/transaction/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: address,
+          type: 'WITHDRAW',
+          amount: amount
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Withdraw request failed');
+      }
+
+      const { txHash } = await response.json();
+      setHash(txHash);
+
+      // Step 2: Start polling for confirmation
+      monitorTransaction(txHash, {
+        onSuccess: (data) => {
+          setIsWithdrawing(false);
+          setIsWithdrawConfirmed(true);
+          toast({
+            title: 'Withdrawal Successful',
+            description: `Successfully withdrawn ${amount} GBC.`,
+          });
+          refetchNonce();
+        },
+        onFailed: (err) => {
+          setIsWithdrawing(false);
+          setError(new Error(err));
+          toast({
+            title: 'Withdrawal Failed',
+            description: err,
+            variant: 'destructive',
+          });
+        }
+      });
 
       return {
         success: true,
-        hash,
-        message: 'Withdrawal submitted',
+        txHash,
+        message: 'Withdrawal initiated'
       };
     } catch (err) {
       console.error('Withdrawal error:', err);
-      throw err;
+      setIsWithdrawing(false);
+      const errorObj = err instanceof Error ? err : new Error('Withdrawal failed');
+      setError(errorObj);
+      throw errorObj;
     }
   };
 
@@ -152,14 +122,12 @@ export function useGBCWithdraw(address?: Address) {
     formattedContractBalance,
 
     // Transaction state
-    isWithdrawing: isPending || isConfirming,
-    isWithdrawConfirmed: isConfirmed,
+    isWithdrawing,
+    isWithdrawConfirmed,
     hash,
-    error: writeError || confirmError,
+    error,
 
     // Actions
-    initiateWithdrawal,
-    submitWithdrawal,
     withdraw,
 
     // Refresh
