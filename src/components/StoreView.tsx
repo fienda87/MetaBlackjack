@@ -40,7 +40,7 @@ const storeSocket = typeof window !== 'undefined' ? io(socketUrl, {
 
 // Contract addresses - hardcoded for client-side reliability
 const GBC_TOKEN_ADDRESS = '0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a' as `0x${string}`
-const DEPOSIT_ESCROW_ADDRESS = '0x4c950023B40131944c7F0D116e86D046A7e7EE20' as `0x${string}`
+const DEPOSIT_ESCROW_ADDRESS = '0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22' as `0x${string}`
 const FAUCET_ADDRESS = '0xa04B31b44DE6773A6018Eaed625FBE6Cb9AA18a7' as `0x${string}`
 const WITHDRAW_ADDRESS = '0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3' as `0x${string}`
 
