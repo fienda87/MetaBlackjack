@@ -161,7 +161,7 @@ async function sendBlockchainTransaction(
       ['function withdraw(uint256 amount) external'],
       signer
     );
-    tx = await contract.withdraw(amountWei);
+    tx = await (contract as any).withdraw(amountWei);
   } else if (type === 'FAUCET') {
     // Send to GBCFaucet contract
     const contract = new ethers.Contract(
@@ -169,7 +169,7 @@ async function sendBlockchainTransaction(
       ['function claim() external'],
       signer
     );
-    tx = await contract.claim();
+    tx = await (contract as any).claim();
   } else {
     throw new Error('Invalid transaction type for blockchain');
   }
