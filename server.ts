@@ -61,16 +61,29 @@ async function createCustomServer() {
       process.env.NEXT_PUBLIC_SOCKET_URL
     ]
       .filter((v): v is string => Boolean(v))
-      .map(normalizeOrigin);
+      .map(normalizeOrigin)
+      .filter((origin) => origin !== '*');
+
+    if (
+      process.env.NEXT_PUBLIC_APP_URL === '*' ||
+      process.env.NEXT_PUBLIC_SOCKET_URL === '*'
+    ) {
+      console.warn(
+        '> CORS warning: NEXT_PUBLIC_APP_URL / NEXT_PUBLIC_SOCKET_URL cannot be "*" when credentials are enabled; wildcard has been ignored.'
+      );
+    }
+
+    const allowedOriginsSet = new Set(allowedOrigins);
 
     const io = new Server(server, {
       path: '/socket.io',
+      addTrailingSlash: false,
       cors: {
         origin: (origin, callback) => {
           if (!origin) return callback(null, true);
 
           const normalized = normalizeOrigin(origin);
-          if (allowedOrigins.includes(normalized)) return callback(null, true);
+          if (allowedOriginsSet.has(normalized)) return callback(null, true);
 
           return callback(new Error(`CORS origin not allowed: ${origin}`), false);
         },
@@ -92,6 +105,7 @@ async function createCustomServer() {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
       console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/socket.io`);
       console.log(`> Environment: ${dev ? 'development' : 'production'}`);
+      console.log(`> CORS allowed origins: ${allowedOrigins.join(', ')}`);
       
       // Try to initialize Redis after server is up (non-blocking)
       try {
