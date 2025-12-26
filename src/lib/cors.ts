@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // Allowed origins dari environment variable
 const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:3000',
-  'https://localhost:3000'
+  'http://127.0.0.1:3000',
+  'https://localhost:3000',
+  'https://metablackjack-production.up.railway.app'
 ];
 
 export function corsMiddleware(request: NextRequest): 
