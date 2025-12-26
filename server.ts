@@ -65,15 +65,9 @@ async function createCustomServer() {
 
     const io = new Server(server, {
       path: '/socket.io',
+      addTrailingSlash: false,
       cors: {
-        origin: (origin, callback) => {
-          if (!origin) return callback(null, true);
-
-          const normalized = normalizeOrigin(origin);
-          if (allowedOrigins.includes(normalized)) return callback(null, true);
-
-          return callback(new Error(`CORS origin not allowed: ${origin}`), false);
-        },
+        origin: allowedOrigins,
         methods: ["GET", "POST"],
         allowedHeaders: ["content-type"],
         credentials: true
@@ -92,6 +86,7 @@ async function createCustomServer() {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
       console.log(`> Socket.IO server running at ws://${hostname}:${currentPort}/socket.io`);
       console.log(`> Environment: ${dev ? 'development' : 'production'}`);
+      console.log(`> CORS allowed origins: ${allowedOrigins.join(', ')}`);
       
       // Try to initialize Redis after server is up (non-blocking)
       try {
