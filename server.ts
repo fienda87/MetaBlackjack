@@ -51,10 +51,29 @@ async function createCustomServer() {
     });
 
     // Setup Socket.IO with correct path
+    const normalizeOrigin = (value: string) => value.replace(/\/$/, '');
+
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'https://metablackjack-production.up.railway.app',
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.NEXT_PUBLIC_SOCKET_URL
+    ]
+      .filter((v): v is string => Boolean(v))
+      .map(normalizeOrigin);
+
     const io = new Server(server, {
       path: '/socket.io',
       cors: {
-        origin: "*", // Allow all origins for development/testing
+        origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+
+          const normalized = normalizeOrigin(origin);
+          if (allowedOrigins.includes(normalized)) return callback(null, true);
+
+          return callback(new Error(`CORS origin not allowed: ${origin}`), false);
+        },
         methods: ["GET", "POST"],
         allowedHeaders: ["content-type"],
         credentials: true
