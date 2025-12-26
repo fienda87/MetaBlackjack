@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createTransaction } from '@/lib/transaction-service.js';
-import { db } from '@/lib/db.js';
+import { createTransaction } from '@/lib/transaction-service';
+import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 

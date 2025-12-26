@@ -2,8 +2,8 @@ import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 
 import { CONTRACTS, GBC_TOKEN_ABI, DEPOSIT_ESCROW_ABI } from '@/lib/web3-config';
 import { parseEther } from 'viem';
 import type { Address } from 'viem';
-import { useTransactionPolling } from './useTransactionPolling.js';
-import { toast } from './use-toast.js';
+import { useTransactionPolling } from './useTransactionPolling';
+import { toast } from './use-toast';
 
 interface DepositState {
   approvalHash?: string;

@@ -1,4 +1,4 @@
-import { db as prisma } from './db.js';
+import { db as prisma } from './db';
 import { ethers } from 'ethers';
 
 export interface TransactionRequest {
