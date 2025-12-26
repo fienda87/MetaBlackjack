@@ -54,7 +54,7 @@ Hardcoded in `config.ts` from deployment:
 
 ```typescript
 export const CONTRACT_ADDRESSES = {
-  DEPOSIT_ESCROW: '0x4c950023B40131944c7F0D116e86D046A7e7EE20',
+  DEPOSIT_ESCROW: '0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22',
   GAME_WITHDRAW: '0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3',
   GBC_FAUCET: '0xa04B31b44DE6773A6018Eaed625FBE6Cb9AA18a7',
 }
@@ -77,7 +77,7 @@ Output:
 🚀 Initializing Blockchain Listener Service...
 ════════════════════════════════════════════════════════════
 🏗️  DepositListener initialized
-📍 Contract: 0x4c950023B40131944c7F0D116e86D046A7e7EE20
+📍 Contract: 0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22
 🌐 RPC: https://rpc-amoy.polygon.technology
 ...
 ✅ All blockchain listeners started successfully!

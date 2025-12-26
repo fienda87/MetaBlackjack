@@ -15,7 +15,7 @@ signature:     0xbc20a62b6c35d42289b5ea841d781c2b98a37c5dcc0a1f208a949cfe1d5fbf4
 // Contract Addresses (Polygon Amoy)
 GameWithdraw:  0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3
 GBC Token:     0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a
-Backend Signer: 0x4c950023B40131944c7F0D116e86D046A7e7EE20
+Backend Signer: 0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22
 ```
 
 ---
@@ -414,7 +414,7 @@ If nonce is used or signature expired:
 
 1. **Call contract read functions:**
    ```
-   backendSigner()      → Should return: 0x4c950023B40131944c7F0D116e86D046A7e7EE20
+   backendSigner()      → Should return: 0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22
    getPlayerNonce(addr) → Last nonce used by player
    usedNonces(nonce)    → Check if nonce already used
    ```

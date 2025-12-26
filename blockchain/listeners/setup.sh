@@ -55,7 +55,7 @@ fi
 echo ""
 echo "📋 Contract Addresses (Polygon Amoy):"
 echo "   GBC Token:       0xAb375cfac25e40Ed0e8aEc079B007DFA0ec4c29a"
-echo "   Deposit Escrow:  0x4c950023B40131944c7F0D116e86D046A7e7EE20"
+echo "   Deposit Escrow:  0x188D3aC5AE2D2B87EdFc1A46f3Ce900c0e7D4E22"
 echo "   Game Withdraw:   0x84eb5B86e53EB5393FB29131a5A30deBA8236cC3"
 echo "   Faucet:          0xa04B31b44DE6773A6018Eaed625FBE6Cb9AA18a7"
 echo ""
