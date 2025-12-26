@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
             type: 'SIGNUP_BONUS',
             amount: mockWallet.balance.toString(),
             status: 'SUCCESS',
+            balanceBefore: 0,
+            balanceAfter: mockWallet.balance,
+            description: 'Signup bonus',
           }
         }).catch(err => console.error('Signup bonus transaction failed:', err))
       } else {

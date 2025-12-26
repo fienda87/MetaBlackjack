@@ -109,10 +109,10 @@ export async function POST(request: NextRequest) {
           data: {
             userId: user.id,
             type: 'WITHDRAWAL',
-            amount: -amount, // Negative for withdrawal
+            amount: (-amount).toString(), // Convert to string (negative for withdrawal)
             balanceBefore,
             balanceAfter,
-            status: 'COMPLETED',
+            status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
             referenceId: txHash,
             description: `Withdrawal to blockchain: ${amount} GBC`,
             metadata: {

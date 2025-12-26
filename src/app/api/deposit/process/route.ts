@@ -94,6 +94,14 @@ export async function POST(request: NextRequest) {
             txHash: txHash,
             blockNumber: blockNumber,
             confirmations: 1,
+            balanceBefore: balanceBefore,
+            balanceAfter: balanceAfter,
+            referenceId: txHash,
+            description: `Deposit from blockchain: ${amount} GBC`,
+            metadata: {
+              source: 'blockchain',
+              timestamp: new Date().toISOString()
+            }
           },
         });
 

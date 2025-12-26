@@ -552,6 +552,10 @@ export async function POST(request: NextRequest) {
           type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
           amount: Math.abs(netProfit).toString(),
           status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
+          balanceBefore: user.balance,
+          balanceAfter: newBalance,
+          referenceId: gameId,
+          description: `Game ${result}: ${updatedGame.currentBet} GBC bet`,
         }
       }).catch(err => console.error('Transaction creation failed:', err))
 

@@ -136,11 +136,11 @@ export async function POST(
       data: {
         userId,
         type: type as any,
-        amount,
+        amount: amount.toString(),
         description: description || `${type.replace('_', ' ')} - ${amount} GBC`,
         balanceBefore,
         balanceAfter,
-        status: 'COMPLETED',
+        status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
         metadata: {
           ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
           userAgent: request.headers.get('user-agent') || 'unknown',

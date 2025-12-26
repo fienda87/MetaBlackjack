@@ -370,11 +370,11 @@ export const setupSocket = (io: Server) => {
             data: {
               userId: data.userId,
               type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
-              amount: Math.abs(netProfit),
+              amount: Math.abs(netProfit).toString(), // Convert to string
               description: `Game ${result?.toLowerCase()} - Blackjack`,
               balanceBefore: user.balance,
               balanceAfter: newBalance,
-              status: 'COMPLETED',
+              status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
               referenceId: data.gameId
             }
           }).catch(err => logger.error('[SOCKET] Transaction creation failed', err));
