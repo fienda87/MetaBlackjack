@@ -32,6 +32,7 @@ const socketUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
 const storeSocket = typeof window !== 'undefined' ? io(socketUrl, {
   path: '/socket.io',
   transports: ['websocket', 'polling'],
+  withCredentials: true,
   reconnection: true,
   reconnectionDelay: 1000,
   reconnectionAttempts: 5,

@@ -86,7 +86,8 @@ async function runPerformanceTest() {
   // Connect WebSocket
   log('\n📡 Connecting to WebSocket server...', 'blue');
   const socket = io(SOCKET_URL, {
-    transports: ['websocket']
+    transports: ['websocket'],
+    withCredentials: true
   });
   
   await new Promise((resolve) => {
