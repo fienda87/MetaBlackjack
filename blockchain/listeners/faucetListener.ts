@@ -273,7 +273,7 @@ export class FaucetListener {
         data: {
           userId: user.id,
           type: 'SIGNUP_BONUS',
-          amount: claimAmount,
+          amount: claimAmount.toString(),
           balanceBefore,
           balanceAfter,
           status: 'COMPLETED',

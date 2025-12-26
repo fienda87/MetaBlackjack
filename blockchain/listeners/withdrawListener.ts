@@ -291,7 +291,7 @@ export class WithdrawListener {
           data: {
             userId: user.id,
             type: 'WITHDRAWAL',
-            amount: withdrawAmount,
+            amount: withdrawAmount.toString(),
             balanceBefore,
             balanceAfter,
             status: 'COMPLETED',
