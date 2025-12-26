@@ -92,7 +92,7 @@ export const generateCacheKey = (
 
 // Cache patterns for invalidation
 export const CACHE_PATTERNS = {
-  USER_GAMES: (userId: string) => `game:*:${userId}:*`,
+  USER_GAMES: (userId: string) => `game:${userId}:*`,
   USER_HISTORY: (userId: string) => `history:${userId}:*`,
   USER_STATS: (userId: string) => `stats:${userId}`,
   USER_BALANCE: (userId: string) => `user:${userId}:balance`,

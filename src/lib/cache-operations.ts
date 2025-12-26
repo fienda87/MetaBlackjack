@@ -210,7 +210,7 @@ export const cacheDeletePattern = async (pattern: string): Promise<number> => {
 export const cacheInvalidateByTags = async (tags: string[]): Promise<void> => {
   try {
     const invalidationPromises = tags.map(tag => {
-      const pattern = `*:${tag}:*`
+      const pattern = `${tag}:*`
       return cacheDeletePattern(pattern)
     })
 
