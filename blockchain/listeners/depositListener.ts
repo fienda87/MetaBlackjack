@@ -292,7 +292,7 @@ export class DepositListener {
           data: {
             userId: user!.id,
             type: 'DEPOSIT',
-            amount: depositAmount,
+            amount: depositAmount.toString(),
             balanceBefore,
             balanceAfter,
             status: 'COMPLETED',
