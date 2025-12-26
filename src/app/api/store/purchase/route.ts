@@ -69,18 +69,9 @@ export async function POST(request: NextRequest) {
     const transaction = await db.transaction.create({
       data: {
         userId,
-        type: 'DEPOSIT' as const,
-        amount: finalAmount,
-        description: `Converted ${amount} ${fromCurrency} to ${finalAmount.toFixed(6)} ${toCurrency}`,
-        balanceBefore: user.balance,
-        balanceAfter: fromCurrency === 'GBC' ? user.balance - totalCost : user.balance + finalAmount,
-        status: 'COMPLETED' as const,
-        metadata: {
-          fromCurrency,
-          toCurrency,
-          rate,
-          totalCost
-        }
+        type: 'DEPOSIT',
+        amount: finalAmount.toString(),
+        status: 'SUCCESS',
       }
     })
 

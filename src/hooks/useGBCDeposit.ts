@@ -2,6 +2,8 @@ import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 
 import { CONTRACTS, GBC_TOKEN_ABI, DEPOSIT_ESCROW_ABI } from '@/lib/web3-config';
 import { parseEther } from 'viem';
 import type { Address } from 'viem';
+import { useTransactionPolling } from './useTransactionPolling.js';
+import { toast } from './use-toast.js';
 
 interface DepositState {
   approvalHash?: string;
@@ -17,6 +19,8 @@ interface DepositState {
  * Hook to manage GBC token deposits to escrow contract
  */
 export function useGBCDeposit(address?: Address) {
+  const { monitorTransaction } = useTransactionPolling();
+
   // Get current allowance
   const { 
     data: allowance,
@@ -68,6 +72,7 @@ export function useGBCDeposit(address?: Address) {
   const { 
     data: depositHash, 
     writeContract: writeDeposit, 
+    writeContractAsync: writeDepositAsync,
     isPending: isDepositPending,
     error: depositError,
     reset: resetDeposit 
@@ -98,13 +103,53 @@ export function useGBCDeposit(address?: Address) {
 
   const deposit = async (amount: string) => {
     try {
+      if (!address) throw new Error('Wallet not connected');
       resetDeposit();
-      await writeDeposit({
+      
+      const txHash = await writeDepositAsync({
         address: CONTRACTS.DEPOSIT_ESCROW,
         abi: DEPOSIT_ESCROW_ABI,
         functionName: 'deposit',
         args: [parseEther(amount)],
       });
+
+      console.log('[Deposit] Transaction sent:', txHash);
+
+      // Notify backend and start polling
+      const response = await fetch('/api/transaction/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: address,
+          type: 'DEPOSIT',
+          amount: amount,
+          txHash
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to register deposit with backend');
+
+      // Start polling for confirmation
+      monitorTransaction(txHash, {
+        onSuccess: (data) => {
+          console.log('[Deposit] Success:', data);
+          toast({
+            title: 'Deposit Successful',
+            description: `Successfully deposited ${amount} GBC.`,
+          });
+          refetchEscrowBalance();
+        },
+        onFailed: (error) => {
+          console.error('[Deposit] Failed:', error);
+          toast({
+            title: 'Deposit Failed',
+            description: error,
+            variant: 'destructive',
+          });
+        }
+      });
+
+      return txHash;
     } catch (err) {
       console.error('Deposit error:', err);
       throw err;

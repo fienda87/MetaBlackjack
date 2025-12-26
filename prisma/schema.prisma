@@ -182,31 +182,25 @@ model AuditLog {
 
 model Transaction {
   id            String    @id @default(cuid())
-  userId        String
-  type          TransactionType
-  amount        Float
-  description   String?
-  referenceId   String?   // Reference to game ID, deposit ID, etc
-  balanceBefore Float     // Balance before transaction
-  balanceAfter  Float     // Balance after transaction
-  status        TransactionStatus @default(PENDING)
-  metadata      Json?     // Additional transaction data
+  userId        String    @db.VarChar(255)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  txHash        String?   @unique @db.VarChar(255)  // Blockchain transaction hash
+  type          String    @db.VarChar(50)           // DEPOSIT, WITHDRAW, FAUCET, etc
+  amount        String    @db.VarChar(255)          // Store as string (BigInt compatible)
+  
+  status        String    @db.VarChar(50)           // PENDING, SUCCESS, FAILED
+  blockNumber   Int?                                // Block number when confirmed
+  confirmations Int       @default(0)               // Number of confirmations
+  
+  errorMessage  String?   @db.Text                  // If FAILED, store error
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
-  // Relations
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // 🚀 Performance indexes
-  @@index([userId, createdAt(sort: Desc)]) // Fast user transaction history (most common query)
-  @@index([userId, type, createdAt]) // Fast filtered transaction queries
-  @@index([status, type]) // Fast admin queries by status and type
-  @@index([referenceId]) // Fast game transaction lookup
-  @@index([status, createdAt]) // Fast pending transaction queries
-  
-  // 🚀 NEW: Additional optimization indexes
-  @@index([userId, status, createdAt]) // Composite: user status-filtered transactions
-  @@map("transactions")
+  @@index([userId])
+  @@index([txHash])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model CryptoPrice {
