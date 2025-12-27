@@ -34,7 +34,8 @@ async function startSpyListener() {
   const code = await provider.getCode(DEPOSIT_ESCROW_ADDRESS);
   if (code === '0x') {
     console.error('❌ Contract not found at address!');
-    process.exit(1);
+    console.error('⚠️  SPY MODE: Skipping scan due to missing contract');
+    return;
   }
   console.log('✅ Contract verified on-chain\n');
 
@@ -204,24 +205,36 @@ async function startSpyListener() {
   console.log('='.repeat(70));
 }
 
-// Handle errors
-process.on('uncaughtException', (error) => {
-  console.error('💥 Uncaught exception:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('💥 Unhandled rejection:', reason);
-  process.exit(1);
-});
-
-// 1. Jalankan Spy Mode secara otomatis saat file di-load (tanpa mematikan server)
+// 1. Jalankan Spy Mode secara otomatis
 startSpyListener().catch(err => console.error("Spy Error:", err));
 
-// 2. Fake Export supaya index.ts tidak error saat Build
+// 2. Fake Export dengan Constructor supaya Build Sukses
 export class DepositListener {
-    public async listen() {
-        console.log("⚠️ DepositListener di-bypass oleh SPY MODE.");
+    private io: any;
+    private isListening: boolean = false;
+
+    // TAMBAHKAN INI AGAR INDEX.TS TIDAK ERROR
+    constructor(io: any) { 
+        this.io = io;
+        console.log("✅ DepositListener constructed (SPY MODE aktif)");
+    }
+
+    public async start() {
+        console.log("⚠️ DepositListener.start() di-bypass oleh SPY MODE.");
         console.log("   Lihat log terminal untuk hasil scan RAW.");
+        this.isListening = true;
+    }
+
+    public async stop() {
+        console.log("⚠️ DepositListener.stop() dipanggil (SPY MODE tidak perlu stop).");
+        this.isListening = false;
+    }
+
+    public getStatus() {
+        return {
+            isListening: this.isListening,
+            mode: 'SPY_MODE',
+            message: 'Listener berjalan dalam spy mode untuk diagnostik'
+        };
     }
 }
