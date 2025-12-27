@@ -82,7 +82,7 @@ export class FaucetListener {
       if (fromBlock > toBlock) return;
 
       const events = await this.contract!.queryFilter(
-        this.contract!.filters.Claim(),
+        'Claim',
         fromBlock,
         toBlock
       );
