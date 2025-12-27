@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
-  createProvider, // 👈 KITA PAKAI HTTP (Stabil)
+  createProvider, 
   CONTRACT_ADDRESSES, 
   formatGBC,
   normalizeAddress,
@@ -10,19 +10,18 @@ import {
 import type { DepositEvent, ProcessedTransaction } from './types.js';
 
 /**
- * 🛠️ FIXED DEPOSIT LISTENER (HYBRID VERSION)
- * Struktur Original + Koreksi ABI & HTTP Polling
+ * 🛠️ FIXED DEPOSIT LISTENER (PRODUCTION READY - FINAL FIX)
+ * Fix: Type Casting amount to String for Prisma Transaction
  */
 
-// 🔥 KITA DEFINISIKAN ABI YANG BENAR DI SINI (HASIL SPY MODE)
-// Mengabaikan DEPOSIT_ESCROW_ABI dari config yang mungkin salah.
+// 🔥 ABI HASIL INVESTIGASI SPY MODE
 const CORRECT_DEPOSIT_ABI = [
   "event Deposit(address indexed user, uint256 amount, uint256 timestamp, uint256 balance)"
 ];
 
 export class DepositListener {
   private contract: ethers.Contract | null = null;
-  private provider: ethers.JsonRpcProvider | null = null; // Ubah ke JsonRpcProvider (HTTP)
+  private provider: ethers.JsonRpcProvider | null = null; 
   private isListening: boolean = false;
   private processedTxHashes: Set<string> = new Set();
   
@@ -31,8 +30,7 @@ export class DepositListener {
 
   constructor(io?: any) {
     this.io = io;
-    
-    console.log('🏗️  DepositListener initialized (HTTP Polling Mode)');
+    console.log('🏗️  DepositListener initialized (HTTP Polling Strategy)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
   }
 
@@ -46,8 +44,7 @@ export class DepositListener {
     }
 
     try {
-      // 1️⃣ GUNAKAN HTTP PROVIDER (Bukan WebSocket)
-      // Ini memanfaatkan fitur polling otomatis Ethers.js yang "Anti-Putus"
+      // 1️⃣ GUNAKAN HTTP PROVIDER (Stabil & Anti-Putus)
       this.provider = createProvider();
       
       if (!this.provider) {
@@ -59,60 +56,52 @@ export class DepositListener {
       // 2️⃣ GUNAKAN ABI YANG SUDAH DIKOREKSI
       this.contract = new ethers.Contract(
         CONTRACT_ADDRESSES.DEPOSIT_ESCROW,
-        CORRECT_DEPOSIT_ABI, // 👈 Pakai ABI yang benar
+        CORRECT_DEPOSIT_ABI, 
         this.provider
       );
 
-      // Verify contract code exists
+      // Cek koneksi contract
       const code = await this.provider.getCode(CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
       if (code === '0x') {
         throw new Error('DepositEscrow contract not found at address');
       }
 
       const currentBlock = await this.provider.getBlockNumber();
-      console.log(`📦 Starting HTTP Polling from block ${currentBlock}`);
+      console.log(`📦 Listening via HTTP Polling from block ${currentBlock}`);
 
-      // 3️⃣ LISTEN EVENT DENGAN ARGUMEN YANG BENAR
-      // Urutan dari Spy Mode: user, amount, timestamp, balance
+      // 3️⃣ LISTEN EVENT (DENGAN URUTAN PARAMETER YANG BENAR)
       this.contract.on("Deposit", async (user, amount, timestamp, balance, event) => {
           try {
               console.log(`\n════════════════════════════════════════════════════════════`);
               console.log(`💰 DEPOSIT EVENT DETECTED! (Block ${event.log.blockNumber})`);
               console.log(`👤 User: ${user}`);
-              console.log(`💵 Amount Raw: ${amount.toString()}`); // Wei
+              console.log(`💵 Amount Raw: ${amount.toString()}`); 
               console.log(`⏰ Timestamp: ${timestamp.toString()}`);
-              console.log(`🏦 Balance Info: ${balance.toString()}`);
               console.log(`════════════════════════════════════════════════════════════\n`);
 
-              const blockNumber = event.log.blockNumber;
-              // Timestamp kita ambil dari event langsung (karena kontrak mengirimnya), lebih akurat
-              const blockTimestamp = Number(timestamp); 
-
-              // Mapping ke struktur DepositEvent original kamu
-              // Kita isi availableRewards dengan 0 karena kontrak ternyata tidak mengirim rewards
+              // Mapping data mentah ke format internal aplikasi
               await this.handleDepositEvent({
                 sender: user,
                 amount: amount,
-                balance: balance,
-                availableRewards: BigInt(0), // Dummy, karena tidak ada di event asli
+                balance: balance, 
+                availableRewards: BigInt(0), 
                 transactionHash: event.log.transactionHash,
-                blockNumber: blockNumber,
-                blockTimestamp: blockTimestamp,
+                blockNumber: event.log.blockNumber,
+                blockTimestamp: Number(timestamp), 
                 logIndex: event.log.index,
               });
 
           } catch (error) {
-              console.error("❌ Error processing deposit event logic:", error);
+              console.error("❌ Error inside event callback:", error);
           }
       });
 
       this.isListening = true;
-      console.log('✅ DepositListener started successfully (HTTP Polling Active)');
+      console.log('✅ DepositListener started successfully');
 
     } catch (error) {
       console.error('❌ Failed to start DepositListener:', error instanceof Error ? error.message : error);
-      // Retry logic removed for simple start failure, Railway will restart the process if needed
-      setTimeout(() => this.start(), 5000); // Simple retry
+      setTimeout(() => this.start(), 5000); 
     }
   }
 
@@ -130,13 +119,9 @@ export class DepositListener {
 
     console.log(`\n🟢 Processing Deposit Logic...`);
     console.log(`├─ Sender: ${event.sender}`);
-    console.log(`├─ Amount: ${formatGBC(event.amount)} POL/GBC`);
-    console.log(`└─ Tx Hash: ${txHash}`);
+    console.log(`├─ Amount: ${formatGBC(event.amount)} GBC`);
 
     try {
-      // Wait for block confirmations
-      // await this.waitForConfirmations(event.blockNumber); // Opsional: Bisa di-skip biar cepat untuk testing
-
       // Process the deposit
       const result = await this.processDeposit(event);
 
@@ -151,7 +136,7 @@ export class DepositListener {
       console.log(`✅ Deposit FULLY processed successfully`);
 
     } catch (error) {
-      console.error(`❌ Failed to process deposit:`, error);
+      console.error(`❌ Failed to process deposit logic:`, error);
     }
   }
 
@@ -175,22 +160,12 @@ export class DepositListener {
     if (apiResult) {
       console.log(`💰 Balance updated via API: ${apiResult.data.balanceBefore} → ${apiResult.data.balanceAfter}`);
       
+      // Kirim event socket manual
       if (this.io) {
-        const eventData = {
-          walletAddress: walletAddress.toLowerCase(),
-          type: 'deposit',
-          amount: depositAmount.toString(),
-          txHash: event.transactionHash,
-          timestamp: Date.now()
-        }
-        this.io.emit('blockchain:balance-updated', eventData)
-        
-        const balanceData = {
-          walletAddress: walletAddress.toLowerCase(),
-          gameBalance: apiResult.data.balanceAfter.toString(),
-          timestamp: Date.now()
-        }
-        this.io.emit('game:balance-updated', balanceData)
+         this.io.emit('balance:updated', {
+             userId: apiResult.data.userId,
+             balanceAfter: apiResult.data.balanceAfter
+         });
       }
       
       return {
@@ -216,18 +191,11 @@ export class DepositListener {
    */
   private async callProcessingAPI(data: any, maxRetries: number = 3): Promise<any | null> {
     const apiKey = process.env.INTERNAL_API_KEY;
-    if (!apiKey) {
-      // console.warn('⚠️  INTERNAL_API_KEY not configured');
-      // return null; // Uncomment kalau mau strict
-    }
-
     const apiUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const endpoint = `${apiUrl}/api/deposit/process`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // console.log(`📡 Calling API (attempt ${attempt}/${maxRetries}): ${endpoint}`);
-        
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -237,26 +205,17 @@ export class DepositListener {
           body: JSON.stringify(data),
         });
 
-        if (!response.ok) {
-           // Ignore error text parsing for now to prevent crash
-           throw new Error(`API error ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`API error ${response.status}`);
 
         const result = await response.json();
-        if (result.success) {
-          return result;
-        }
-
-        throw new Error(result.error || 'API returned success=false');
+        if (result.success) return result;
 
       } catch (error) {
-        // console.error(`❌ API call failed (attempt ${attempt}/${maxRetries})`);
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
-
     return null;
   }
 
@@ -282,7 +241,7 @@ export class DepositListener {
             walletAddress,
             balance: 0,
             startingBalance: 0,
-            username: `User-${walletAddress.slice(0,6)}` // Tambahkan default username biar ga error
+            username: `User-${walletAddress.slice(0,6)}`
           },
           select: { id: true, balance: true, walletAddress: true },
         });
@@ -305,7 +264,7 @@ export class DepositListener {
           data: {
             userId: user!.id,
             type: 'DEPOSIT',
-            amount: depositAmount, // Pastikan tipe data schema Prisma Float/Decimal
+            amount: depositAmount.toString(), // 👈 FIX: Convert ke String untuk Prisma
             balanceBefore,
             balanceAfter,
             status: 'COMPLETED',
@@ -341,27 +300,6 @@ export class DepositListener {
   }
 
   /**
-   * Wait for block confirmations before processing
-   */
-  private async waitForConfirmations(eventBlockNumber: number): Promise<void> {
-   const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION || 1; // Default 1 biar cepat
-
-   while (true) {
-     if (!this.provider) throw new Error('Provider not initialized');
-     
-     const currentBlock = await this.provider.getBlockNumber();
-     const confirmations = currentBlock - eventBlockNumber;
-
-     if (confirmations >= requiredConfirmations) {
-       break;
-     }
-
-     console.log(`⏳ Confirmations: ${confirmations}/${requiredConfirmations}`);
-     await new Promise(resolve => setTimeout(resolve, 3000));
-   }
-  }
-
-  /**
    * Emit Socket.IO event for real-time balance update
    */
   private emitBalanceUpdate(transaction: ProcessedTransaction): void {
@@ -377,10 +315,7 @@ export class DepositListener {
       timestamp: transaction.timestamp.toISOString(),
     };
 
-    // Emit to specific user's room
     this.io.to(transaction.userId).emit('balance:updated', event);
-    
-    // Also emit to wallet address room (if connected via wallet)
     this.io.emit('deposit:confirmed', event);
   }
 
@@ -389,21 +324,10 @@ export class DepositListener {
    */
   async stop(): Promise<void> {
     if (!this.isListening) return;
-
     if (this.contract) {
       this.contract.removeAllListeners('Deposit');
     }
     this.isListening = false;
     console.log('🛑 DepositListener stopped');
-  }
-
-  /**
-   * Get listener status
-   */
-  getStatus(): { isListening: boolean; processedCount: number } {
-    return {
-      isListening: this.isListening,
-      processedCount: this.processedTxHashes.size,
-    };
   }
 }
