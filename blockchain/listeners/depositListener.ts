@@ -41,7 +41,7 @@ async function startSpyListener() {
 
   // Get current block
   const currentBlock = await provider.getBlockNumber();
-  const startBlock = Math.max(0, currentBlock - 10); // Scan last 10 blocks (Alchemy Free tier limit)
+  const startBlock = Math.max(0, currentBlock - 5); // Scan last 5 blocks (safe for Alchemy Free tier)
   
   console.log(`📦 Scanning blocks ${startBlock} to ${currentBlock} for ALL logs...\n`);
 
@@ -49,7 +49,7 @@ async function startSpyListener() {
   const filter = {
     address: DEPOSIT_ESCROW_ADDRESS,
     fromBlock: startBlock,
-    toBlock: 'latest',
+    toBlock: currentBlock,
   };
 
   console.log('⏳ Fetching all logs (this may take a moment)...');
