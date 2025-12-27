@@ -1,4 +1,1 @@
-# This is your Prisma migration lock file.
-# Learn more about it in the docs: https://pris.ly/d/migration-lock
-
 provider = "postgresql"
