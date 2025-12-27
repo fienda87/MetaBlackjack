@@ -72,17 +72,41 @@ export class DepositListener {
       console.log(`📦 Starting from block ${currentBlock}`);
 
       // Listen to new Deposit events
-      this.contract.on('Deposit', async (player, amount, timestamp, totalBalance, event) => {
-        await this.handleDepositEvent({
-          player,
-          amount,
-          timestamp,
-          totalBalance,
-          transactionHash: event.log.transactionHash,
-          blockNumber: event.log.blockNumber,
-          blockTimestamp: Number(timestamp),
-          logIndex: event.log.index,
-        });
+      this.contract.on("Deposit", async (sender, amount, balance, availableRewards, event) => {
+          try {
+              console.log(`\n════════════════════════════════════════════════════════════`);
+              console.log(`💰 DEPOSIT EVENT DETECTED! (Signature Match ✅)`);
+              console.log(`👤 User: ${sender}`);
+              console.log(`💵 Amount: ${amount.toString()}`);
+              console.log(`🏦 Contract Balance: ${balance.toString()}`);
+              console.log(`🎁 Rewards Pool: ${availableRewards.toString()}`);
+              console.log(`════════════════════════════════════════════════════════════\n`);
+
+              // --- MASUKKAN LOGIKA UPDATE DATABASE KAMU DI SINI ---
+              // Contoh: await prisma.user.update(...) 
+              // PENTING: Gunakan variabel 'amount' untuk update saldo user.
+              
+              // Panggil fungsi proses deposit yang sudah ada (sesuaikan dengan kodemu)
+              // await processDeposit(sender, amount, event.transactionHash);
+
+              const blockNumber = event.log.blockNumber;
+              const block = await this.provider?.getBlock(blockNumber);
+              const blockTimestamp = block?.timestamp ?? Math.floor(Date.now() / 1000);
+
+              await this.handleDepositEvent({
+                sender,
+                amount,
+                balance,
+                availableRewards,
+                transactionHash: event.log.transactionHash,
+                blockNumber,
+                blockTimestamp,
+                logIndex: event.log.index,
+              });
+
+          } catch (error) {
+              console.error("❌ Error processing deposit event:", error);
+          }
       });
 
       this.isListening = true;
@@ -108,7 +132,7 @@ export class DepositListener {
     }
 
     console.log(`\n🟢 Deposit Event Detected!`);
-    console.log(`├─ Player: ${event.player}`);
+    console.log(`├─ Sender: ${event.sender}`);
     console.log(`├─ Amount: ${formatGBC(event.amount)} GBC`);
     console.log(`├─ Tx Hash: ${txHash}`);
     console.log(`└─ Block: ${event.blockNumber}`);
@@ -140,7 +164,7 @@ export class DepositListener {
    * Process deposit: call internal API with retry logic
    */
   private async processDeposit(event: DepositEvent): Promise<ProcessedTransaction | null> {
-    const walletAddress = normalizeAddress(event.player);
+    const walletAddress = normalizeAddress(event.sender);
     const depositAmount = formatGBC(event.amount);
 
     // Try API first with retry logic
@@ -150,7 +174,7 @@ export class DepositListener {
       txHash: event.transactionHash,
       blockNumber: event.blockNumber,
       timestamp: event.blockTimestamp,
-      totalBalance: formatGBC(event.totalBalance),
+      totalBalance: formatGBC(event.balance),
     });
 
     if (apiResult) {
