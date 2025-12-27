@@ -2,10 +2,7 @@ import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
   createProvider,
-  getWebSocketProvider,
-  initializeWebSocketProvider,
   CONTRACT_ADDRESSES, 
-  GBC_FAUCET_ABI,
   formatGBC,
   normalizeAddress,
   NETWORK_CONFIG
@@ -13,16 +10,41 @@ import {
 import type { FaucetClaimEvent, ProcessedTransaction } from './types.js';
 
 /**
- * Faucet Claim Event Listener
- * Listens to GBCFaucet contract Claim events and updates user balance
+ * CORRECT_FAUCET_ABI - Manual ABI definition for GBCFaucet Claim event
+ * This is the canonical event signature for the faucet contract
+ */
+const CORRECT_FAUCET_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'claimer', type: 'address' },
+      { indexed: false, name: 'amount', type: 'uint256' },
+      { indexed: false, name: 'timestamp', type: 'uint256' }
+    ],
+    name: 'Claim',
+    type: 'event'
+  }
+] as const;
+
+/**
+ * Faucet Claim Event Listener - Production Version
+ * 
+ * Features:
+ * - HTTP Polling Strategy (stable, no WebSocket reconnection issues)
+ * - Dual-Layer Duplicate Protection (RAM Set + DB referenceId check)
+ * - API-First with DB Fallback (max 3 retries)
+ * - Complete Socket.IO event emission
+ * - Proper error handling with reconnect delay
  */
 export class FaucetListener {
   private contract: ethers.Contract | null = null;
-  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
+  private provider: ethers.JsonRpcProvider | null = null;
   private isListening: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 10;
+  private pollInterval: NodeJS.Timeout | null = null;
   private processedTxHashes: Set<string> = new Set();
+  private lastProcessedBlock: number = 0;
   
   // Socket.IO instance (injected)
   private io?: any;
@@ -30,13 +52,13 @@ export class FaucetListener {
   constructor(io?: any) {
     this.io = io;
     
-    console.log('🏗️  FaucetListener initialized (will connect on start)');
+    console.log('🏗️  FaucetListener initialized (HTTP polling mode)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.GBC_FAUCET);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
 
   /**
-   * Start listening to Claim events
+   * Start listening to Claim events via HTTP polling
    */
   async start(): Promise<void> {
     if (this.isListening) {
@@ -45,19 +67,15 @@ export class FaucetListener {
     }
 
     try {
-      // Initialize WebSocket provider (with graceful fallback)
-      this.provider = await initializeWebSocketProvider();
+      // Initialize HTTP provider for stable polling
+      this.provider = createProvider();
       
-      if (!this.provider) {
-        throw new Error('Failed to initialize WebSocket provider');
-      }
-
       console.log('📍 Provider initialized:', this.provider.constructor.name);
 
-      // Create contract instance
+      // Create contract instance with CORRECT_FAUCET_ABI
       this.contract = new ethers.Contract(
         CONTRACT_ADDRESSES.GBC_FAUCET,
-        GBC_FAUCET_ABI,
+        CORRECT_FAUCET_ABI,
         this.provider
       );
 
@@ -67,26 +85,19 @@ export class FaucetListener {
         throw new Error('GBCFaucet contract not found at address');
       }
 
-      // Get current block number
-      const currentBlock = await this.provider.getBlockNumber();
-      console.log(`📦 Starting from block ${currentBlock}`);
+      console.log('✅ Contract verified at', CONTRACT_ADDRESSES.GBC_FAUCET);
 
-      // Listen to new Claim events
-      this.contract.on('Claim', async (claimer, amount, timestamp, event) => {
-        await this.handleClaimEvent({
-          claimer,
-          amount,
-          timestamp,
-          transactionHash: event.log.transactionHash,
-          blockNumber: event.log.blockNumber,
-          blockTimestamp: Number(timestamp),
-          logIndex: event.log.index,
-        });
-      });
+      // Get starting block (last processed or current)
+      const currentBlock = await this.provider.getBlockNumber();
+      this.lastProcessedBlock = currentBlock - NETWORK_CONFIG.BLOCK_CONFIRMATION;
+      console.log(`📦 Starting polling from block ${this.lastProcessedBlock}`);
+
+      // Start HTTP polling
+      this.startPolling();
 
       this.isListening = true;
       this.reconnectAttempts = 0;
-      console.log('✅ FaucetListener started successfully');
+      console.log('✅ FaucetListener started successfully (HTTP polling)');
 
     } catch (error) {
       console.error('❌ Failed to start FaucetListener:', error instanceof Error ? error.message : error);
@@ -95,14 +106,77 @@ export class FaucetListener {
   }
 
   /**
-   * Handle Claim event
+   * Start HTTP polling for new events
+   */
+  private startPolling(): void {
+    this.pollInterval = setInterval(async () => {
+      try {
+        await this.pollForEvents();
+      } catch (error) {
+        console.error('❌ Polling error:', error instanceof Error ? error.message : error);
+      }
+    }, NETWORK_CONFIG.POLLING_INTERVAL);
+    
+    console.log(`🔄 Polling every ${NETWORK_CONFIG.POLLING_INTERVAL}ms`);
+  }
+
+  /**
+   * Poll for new Claim events since last processed block
+   */
+  private async pollForEvents(): Promise<void> {
+    if (!this.contract || !this.provider) {
+      throw new Error('Contract or provider not initialized');
+    }
+
+    const currentBlock = await this.provider.getBlockNumber();
+    const fromBlock = this.lastProcessedBlock + 1;
+    const toBlock = currentBlock - NETWORK_CONFIG.BLOCK_CONFIRMATION;
+
+    if (fromBlock > toBlock) {
+      return; // No new blocks to process
+    }
+
+    console.log(`🔍 Checking blocks ${fromBlock} to ${toBlock}...`);
+
+    try {
+      const filter = this.contract.filters.Claim();
+      const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
+
+      for (const event of events) {
+        await this.handleClaimEvent({
+          claimer: event.args[0] as string,
+          amount: event.args[1] as bigint,
+          timestamp: event.args[2] as bigint,
+          transactionHash: event.transactionHash,
+          blockNumber: event.blockNumber,
+          blockTimestamp: Number(event.args[2]),
+          logIndex: event.logIndex,
+        });
+      }
+
+      // Update last processed block
+      if (events.length > 0) {
+        this.lastProcessedBlock = events[events.length - 1].blockNumber;
+        console.log(`📦 Updated last processed block to ${this.lastProcessedBlock}`);
+      } else {
+        this.lastProcessedBlock = toBlock;
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to query events:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Handle Claim event with dual-layer duplicate protection
    */
   private async handleClaimEvent(event: FaucetClaimEvent): Promise<void> {
     const txHash = event.transactionHash;
     
-    // Prevent duplicate processing
+    // LAYER 1: RAM check - Fast in-memory deduplication
     if (this.processedTxHashes.has(txHash)) {
-      console.log(`⏭️  Skipping duplicate tx: ${txHash}`);
+      console.log(`⏭️  RAM skip (already processed): ${txHash.substring(0, 16)}...`);
       return;
     }
 
@@ -110,33 +184,55 @@ export class FaucetListener {
     console.log(`├─ Claimer: ${event.claimer}`);
     console.log(`├─ Amount: ${formatGBC(event.amount)} GBC`);
     console.log(`├─ Tx Hash: ${txHash}`);
-    console.log(`└─ Block: ${event.blockNumber}`);
+    console.log(`├─ Block: ${event.blockNumber}`);
+    console.log(`└─ Timestamp: ${new Date(event.blockTimestamp * 1000).toISOString()}`);
 
     try {
-      // Wait for block confirmations
-      await this.waitForConfirmations(event.blockNumber);
+      // LAYER 2: DB check - Persistent duplicate protection via referenceId
+      const existingTx = await db.transaction.findFirst({
+        where: { referenceId: txHash },
+        select: { id: true },
+      });
+
+      if (existingTx) {
+        console.log(`⏭️  DB skip (referenceId exists): ${txHash.substring(0, 16)}...`);
+        this.processedTxHashes.add(txHash);
+        return;
+      }
 
       // Process the claim
       const result = await this.processClaim(event);
 
-      // Mark as processed
-      this.processedTxHashes.add(txHash);
+      if (result) {
+        // Mark as processed in RAM
+        this.processedTxHashes.add(txHash);
+        
+        // Limit RAM set size to prevent memory leaks
+        if (this.processedTxHashes.size > 10000) {
+          const iterator = this.processedTxHashes.keys();
+          for (let i = 0; i < 5000; i++) {
+            iterator.next();
+          }
+          const newSet = new Set<string>(Array.from(iterator));
+          this.processedTxHashes = newSet;
+        }
 
-      // Emit Socket.IO event for real-time update
-      if (this.io && result) {
-        this.emitBalanceUpdate(result);
+        // Emit Socket.IO event for real-time update
+        if (this.io) {
+          this.emitBalanceUpdate(result);
+        }
+
+        console.log(`✅ Faucet claim processed successfully: ${txHash.substring(0, 16)}...`);
       }
 
-      console.log(`✅ Faucet claim processed successfully`);
-
     } catch (error) {
-      console.error(`❌ Failed to process faucet claim:`, error);
-      // Don't mark as processed so it can be retried
+      console.error(`❌ Failed to process faucet claim:`, error instanceof Error ? error.message : error);
+      // Don't mark as processed so it can be retried on next poll
     }
   }
 
   /**
-   * Process faucet claim: call internal API with retry logic
+   * Process faucet claim: API-first with DB fallback
    */
   private async processClaim(event: FaucetClaimEvent): Promise<ProcessedTransaction | null> {
     const walletAddress = normalizeAddress(event.claimer);
@@ -154,7 +250,7 @@ export class FaucetListener {
     if (apiResult) {
       console.log(`🎉 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
       
-      // Emit Socket.IO events directly from listener (faucet only updates wallet, not game balance)
+      // Emit Socket.IO events directly from listener
       if (this.io) {
         const eventData = {
           walletAddress: walletAddress.toLowerCase(),
@@ -162,9 +258,9 @@ export class FaucetListener {
           amount: claimAmount.toString(),
           txHash: event.transactionHash,
           timestamp: Date.now()
-        }
-        this.io.emit('blockchain:balance-updated', eventData)
-        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
+        };
+        this.io.emit('blockchain:balance-updated', eventData);
+        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`);
       }
       
       return {
@@ -186,7 +282,7 @@ export class FaucetListener {
   }
 
   /**
-   * Call internal processing API with retry logic
+   * Call internal processing API with retry logic (max 3 retries)
    */
   private async callProcessingAPI(data: any, maxRetries: number = 3): Promise<any | null> {
     const apiKey = process.env.INTERNAL_API_KEY;
@@ -202,6 +298,9 @@ export class FaucetListener {
       try {
         console.log(`📡 Calling API (attempt ${attempt}/${maxRetries}): ${endpoint}`);
         
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -209,7 +308,10 @@ export class FaucetListener {
             'x-internal-api-key': apiKey,
           },
           body: JSON.stringify(data),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const error = await response.text();
@@ -225,7 +327,7 @@ export class FaucetListener {
         throw new Error(result.error || 'API returned success=false');
 
       } catch (error) {
-        console.error(`❌ API call failed (attempt ${attempt}/${maxRetries}):`, error);
+        console.error(`❌ API call failed (attempt ${attempt}/${maxRetries}):`, error instanceof Error ? error.message : error);
         
         if (attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
@@ -235,6 +337,7 @@ export class FaucetListener {
       }
     }
 
+    console.error(`💀 All ${maxRetries} API attempts failed`);
     return null;
   }
 
@@ -265,10 +368,10 @@ export class FaucetListener {
         });
       }
 
-      const balanceBefore = user.balance;
-      const balanceAfter = user.balance; // Faucet does NOT update game balance
+      const balanceBefore = Number(user.balance);
+      const balanceAfter = balanceBefore; // Faucet does NOT update game balance
 
-      // Create transaction record for tracking (no balance update)
+      // Create transaction record for tracking (no balance update - wallet only)
       await db.transaction.create({
         data: {
           userId: user.id,
@@ -285,12 +388,25 @@ export class FaucetListener {
             onChainAmount: event.amount.toString(),
             source: 'faucet',
             fallback: true,
-            walletOnly: true, // Flag to indicate this is wallet-only, not game balance
+            walletOnly: true,
           },
         },
       });
 
-      console.log(`🎉 Faucet claim logged (DB fallback): ${claimAmount} GBC added to wallet (on-chain)`);
+      console.log(`🎉 Faucet claim logged (DB fallback): ${claimAmount} GBC for ${walletAddress}`);
+
+      // Emit Socket.IO event for DB fallback case
+      if (this.io) {
+        const eventData = {
+          walletAddress: walletAddress.toLowerCase(),
+          type: 'faucet',
+          amount: claimAmount.toString(),
+          txHash: event.transactionHash,
+          timestamp: Date.now()
+        };
+        this.io.emit('blockchain:balance-updated', eventData);
+        console.log(`📡 Emitted blockchain:balance-updated (DB fallback) for ${walletAddress}`);
+      }
 
       return {
         txHash: event.transactionHash,
@@ -305,31 +421,8 @@ export class FaucetListener {
       };
 
     } catch (error) {
-      console.error('❌ Database operation failed:', error);
+      console.error('❌ Database operation failed:', error instanceof Error ? error.message : error);
       throw error;
-    }
-  }
-
-  /**
-   * Wait for block confirmations before processing
-   */
-  private async waitForConfirmations(eventBlockNumber: number): Promise<void> {
-    const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
-    
-    while (true) {
-      if (!this.provider) {
-        throw new Error('Provider not initialized');
-      }
-      const currentBlock = await this.provider.getBlockNumber();
-      const confirmations = currentBlock - eventBlockNumber;
-      
-      if (confirmations >= requiredConfirmations) {
-        console.log(`✓ ${confirmations} confirmations received`);
-        break;
-      }
-      
-      console.log(`⏳ Waiting for confirmations: ${confirmations}/${requiredConfirmations}`);
-      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
 
@@ -349,17 +442,21 @@ export class FaucetListener {
       timestamp: transaction.timestamp.toISOString(),
     };
 
-    // Emit to specific user's room
-    this.io.to(transaction.userId).emit('balance:updated', event);
-    
-    // Also emit faucet claim confirmed event
-    this.io.emit('faucet:claimed', event);
+    try {
+      // Emit to specific user's room
+      this.io.to(transaction.userId).emit('balance:updated', event);
+      
+      // Also emit faucet claim confirmed event
+      this.io.emit('faucet:claimed', event);
 
-    console.log(`📡 Socket.IO event emitted to user: ${transaction.userId}`);
+      console.log(`📡 Socket.IO events emitted for user: ${transaction.userId}`);
+    } catch (error) {
+      console.error('❌ Failed to emit Socket.IO event:', error);
+    }
   }
 
   /**
-   * Handle reconnection logic
+   * Handle reconnection logic with exponential backoff
    */
   private async handleReconnect(): Promise<void> {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -368,7 +465,7 @@ export class FaucetListener {
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
     
     console.log(`🔄 Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
     
@@ -382,9 +479,17 @@ export class FaucetListener {
   async stop(): Promise<void> {
     if (!this.isListening) return;
 
-    if (this.contract) {
-      this.contract.removeAllListeners('Claim');
+    // Stop polling
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
     }
+
+    // Remove all listeners
+    if (this.contract) {
+      this.contract.removeAllListeners();
+    }
+
     this.isListening = false;
     console.log('🛑 FaucetListener stopped');
   }
@@ -392,11 +497,19 @@ export class FaucetListener {
   /**
    * Get listener status
    */
-  getStatus(): { isListening: boolean; processedCount: number; reconnectAttempts: number } {
+  getStatus(): { 
+    isListening: boolean; 
+    processedCount: number; 
+    reconnectAttempts: number;
+    lastProcessedBlock: number;
+    providerType: string | null;
+  } {
     return {
       isListening: this.isListening,
       processedCount: this.processedTxHashes.size,
       reconnectAttempts: this.reconnectAttempts,
+      lastProcessedBlock: this.lastProcessedBlock,
+      providerType: this.provider ? this.provider.constructor.name : null,
     };
   }
 }
