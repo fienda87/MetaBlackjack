@@ -32,7 +32,6 @@ export class WithdrawListener {
     this.io = io;
     console.log('🏗️  WithdrawListener initialized (HTTP Polling Strategy)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.GAME_WITHDRAW);
-    console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
 
   /**
