@@ -215,6 +215,7 @@ export async function POST(request: NextRequest) {
   // Declare variables that might be used in switch
   let result: string | null = null
   let netProfit: number = 0
+  let payout: number = 0
   let finalGameState = 'PLAYING'
 
     // Process action
@@ -405,7 +406,8 @@ export async function POST(request: NextRequest) {
         updatedGame.hasSurrendered = true
         finalGameState = 'SURRENDERED'
         result = 'SURRENDER'
-        netProfit = -Math.floor(game.currentBet / 2) // Lose half the bet
+        payout = Math.floor(game.currentBet / 2)
+        netProfit = payout - game.currentBet
         break
 
       case 'split_hit':
@@ -457,46 +459,36 @@ export async function POST(request: NextRequest) {
     const newPlayerHand = GameEngine.calculateHandValue(playerCards)
     const newDealerHand = GameEngine.calculateHandValue(dealerCards)
 
-  // Reset game state for final determination
-  finalGameState = 'PLAYING'
-  result = null
-  netProfit = 0
+    if (finalGameState !== 'SURRENDERED') {
+      const playerBust = newPlayerHand.isBust || splitHands.some((hand: any) => hand.isBust)
 
-    // Check if player bust (for main hand or split hands)
-    const playerBust = newPlayerHand.isBust || splitHands.some(hand => hand.isBust)
-    
-    if (playerBust) {
-      finalGameState = 'ENDED'
-      result = 'LOSE'
-      netProfit = -updatedGame.currentBet
-    } else if (action === 'stand' || action === 'split_stand' || (action === 'double_down' && !newPlayerHand.isBust)) {
-      // Game ends after stand or double down
-      finalGameState = 'ENDED'
-      
-      const gameResult = calculateGameResult(
-        newPlayerHand as any,
-        newDealerHand as any,
-        updatedGame.currentBet,
-        updatedGame.insuranceBet || 0,
-        newDealerHand.isBlackjack,
-        updatedGame.hasSurrendered || false
-      )
-      
-      result = gameResult.result.toUpperCase()
-      netProfit = gameResult.winAmount - updatedGame.currentBet
-    } 
-    // DO NOT auto-stand on 21 from HIT action
-    // Let player manually stand to see the game play out
-    // This prevents instant game end when player hits to 21
+      if (playerBust) {
+        finalGameState = 'ENDED'
+        result = 'LOSE'
+        netProfit = -updatedGame.currentBet
+        payout = 0
+      } else if (action === 'stand' || action === 'split_stand' || (action === 'double_down' && !newPlayerHand.isBust)) {
+        finalGameState = 'ENDED'
 
-    // 🚀 Calculate new balance
-    let newBalance = user.balance
-    if (finalGameState === 'ENDED') {
-      newBalance = user.balance + netProfit
+        const gameResult = calculateGameResult(
+          newPlayerHand as any,
+          newDealerHand as any,
+          updatedGame.currentBet,
+          updatedGame.insuranceBet || 0,
+          newDealerHand.isBlackjack,
+          updatedGame.hasSurrendered || false
+        )
+
+        result = gameResult.result.toUpperCase()
+        payout = gameResult.winAmount
+        netProfit = gameResult.winAmount - updatedGame.currentBet
+      }
     }
 
+    const isSettlement = finalGameState === 'ENDED' || finalGameState === 'SURRENDERED'
+
     // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
-    const [updatedGameRecord] = await executeParallel(
+    const [updatedGameRecord, updatedUser] = await executeParallel(
       db.game.update({
         where: { id: gameId },
         data: {
@@ -512,17 +504,23 @@ export async function POST(request: NextRequest) {
           hasSplit: updatedGame.hasSplit,
           hasSurrendered: updatedGame.hasSurrendered,
           hasInsurance: updatedGame.hasInsurance,
-          endedAt: (finalGameState === 'ENDED' || finalGameState === 'SURRENDERED') ? new Date() : null
+          endedAt: isSettlement ? new Date() : null
         }
       }),
-      finalGameState === 'ENDED' ? db.user.update({
-        where: { id: userId },
-        data: { balance: newBalance }
-      }) : Promise.resolve()
+      isSettlement
+        ? db.user.update({
+            where: { id: userId },
+            data: { balance: { increment: payout } },
+            select: { balance: true }
+          })
+        : Promise.resolve(null)
     )
 
+    const newBalance = isSettlement ? (updatedUser as any)?.balance ?? user.balance : user.balance
+    const balanceBefore = isSettlement ? newBalance - payout : user.balance
+
     // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
-    if (finalGameState === 'ENDED') {
+    if (isSettlement) {
       await cacheInvalidation.invalidateOnGameEnd(gameId, userId, result || 'ENDED')
     } else {
       await cacheInvalidation.invalidateGameData(gameId, userId, 'game_action')
@@ -536,23 +534,23 @@ export async function POST(request: NextRequest) {
         payload: {
           playerCards,
           splitHands,
-          dealerCards: finalGameState === 'ENDED' ? dealerCards : [dealerCards[0]],
+          dealerCards: isSettlement ? dealerCards : [dealerCards[0]],
           playerHandValue: newPlayerHand.value,
-          dealerHandValue: finalGameState === 'ENDED' ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
+          dealerHandValue: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           currentBet: updatedGame.currentBet,
           aceValue: payload?.aceValue
         }
       }
     }).catch(err => console.error('GameMove creation failed:', err))
 
-    if (finalGameState === 'ENDED') {
+    if (isSettlement) {
       db.transaction.create({
         data: {
           userId,
           type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
           amount: Math.abs(netProfit).toString(),
-          status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
-          balanceBefore: user.balance,
+          status: 'SUCCESS',
+          balanceBefore,
           balanceAfter: newBalance,
           referenceId: gameId,
           description: `Game ${result}: ${updatedGame.currentBet} GBC bet`,
