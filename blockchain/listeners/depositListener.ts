@@ -1,10 +1,10 @@
 /**
- * HTTP POLLING SPY MODE (VERSION: TYPE-SAFE)
+ * HTTP POLLING SPY MODE (VERSION: BUILD FIX)
  * Teknik "Nanya Terus" setiap 5 detik. 
- * Diperbaiki agar lolos Next.js Build (Strict Mode).
+ * Fix: Class DepositListener disesuaikan dengan index.ts (.start)
  */
 import { ethers } from 'ethers'; 
-// @ts-ignore - Abaikan error path kalau config.js dianggap salah oleh linter
+// @ts-ignore
 import { 
   createProvider,
   CONTRACT_ADDRESSES
@@ -61,12 +61,10 @@ async function startSpyListener() {
       lastCheckedBlock = currentBlock - 5; 
 
       console.log('\n🚜 HTTP POLLING SPY ACTIVATED');
-      console.log('💪 Menggunakan metode "Tanya Terus" (Anti-WebSocket Error)');
-      console.log(`📍 Memantau: ${DEPOSIT_ESCROW_ADDRESS}`);
-      console.log(`⏱️  Interval: Cek setiap 5 detik...`);
+      console.log('💪 Method: Polling 5s (Anti-WebSocket Error)');
+      console.log(`📍 Watching: ${DEPOSIT_ESCROW_ADDRESS}`);
       console.log("\n🔴 MENUNGGU DEPOSIT BARU... SILAKAN DEPOSIT SEKARANG!");
 
-      // LOOPING MANUAL (setInterval)
       setInterval(async () => {
           if (isScanning) return; 
           isScanning = true;
@@ -89,22 +87,27 @@ async function startSpyListener() {
               }
           } catch (error: any) {
               const msg = error?.message || "Unknown error";
-              console.log("⚠️ Error ringan saat polling:", msg);
+              console.log("⚠️ Polling error (ignore):", msg);
           } finally {
               isScanning = false;
           }
-      }, 5000); // 5 detik
+      }, 5000); 
 
   } catch (err: any) {
       console.error("FATAL SPY ERROR:", err);
   }
 }
 
-// Jalankan
+// Jalankan Spy
 startSpyListener().catch((err) => console.error("Startup Error:", err));
 
-// Fake Class Biar Build Lolos (Wajib ada)
+// 👇 FIXED: Method renamed from listen() to start()
 export class DepositListener {
     constructor(io: any) {}
-    public async listen() { console.log("⚠️ Listener bypassed by HTTP SPY."); }
+
+    // ✅ METHOD NAME CHANGED: listen() → start()
+    // NOW MATCHES index.ts EXPECTATIONS
+    public async start() { 
+        console.log("⚠️ DepositListener.start() bypassed by HTTP SPY.");
+    }
 }
