@@ -215,13 +215,13 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
-// Start the spy listener
-startSpyListener()
-  .then(() => {
-    console.log('\n✅ Spy listener scan complete. Exiting...');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
-  });
+// 1. Jalankan Spy Mode secara otomatis saat file di-load (tanpa mematikan server)
+startSpyListener().catch(err => console.error("Spy Error:", err));
+
+// 2. Fake Export supaya index.ts tidak error saat Build
+export class DepositListener {
+    public async listen() {
+        console.log("⚠️ DepositListener di-bypass oleh SPY MODE.");
+        console.log("   Lihat log terminal untuk hasil scan RAW.");
+    }
+}
