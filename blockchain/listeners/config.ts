@@ -11,7 +11,7 @@ export const DEPOSIT_ESCROW_ABI = [
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
+        "indexed": false,
         "internalType": "address",
         "name": "sender",
         "type": "address"
