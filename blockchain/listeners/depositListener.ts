@@ -7,7 +7,7 @@ import {
   createProvider,
   CONTRACT_ADDRESSES, 
   NETWORK_CONFIG 
-} from './config.js';
+} from './config';
 
 // Address shortcut
 const DEPOSIT_ESCROW_ADDRESS = CONTRACT_ADDRESSES.DEPOSIT_ESCROW;
@@ -40,7 +40,7 @@ async function startSpyListener() {
 
   // Get current block
   const currentBlock = await provider.getBlockNumber();
-  const startBlock = Math.max(0, currentBlock - 1000); // Scan last 1000 blocks
+  const startBlock = Math.max(0, currentBlock - 100); // Scan last 100 blocks
   
   console.log(`📦 Scanning blocks ${startBlock} to ${currentBlock} for ALL logs...\n`);
 
@@ -152,11 +152,18 @@ async function startSpyListener() {
       for (const strategy of decodeStrategies) {
         try {
           console.log(`   Trying: ${strategy.name}`);
-          const decoded = abiCoder.decode(strategy.types, strategy.values, strategy.data);
-          console.log(`   Decoded: ${JSON.stringify(decoded, null, 2)}`);
+          
+          // ✅ FIX: Only 2 arguments to decode()
+          const dataToDecode = strategy.data || log.data;
+          const decoded = abiCoder.decode(strategy.types, dataToDecode);
+          
+          console.log(`   ✅ Decoded Success: ${strategy.name}`);
+          const decodedArr = Array.from(decoded).map(d => d.toString());
+          console.log(`   📄 Result: ${JSON.stringify(decodedArr, null, 2)}`);
           break;
         } catch (e: any) {
-          console.log(`   Failed: ${e.message.substring(0, 80)}`);
+          // Error is normal if strategy doesn't match, continue loop
+          // console.log(`   Failed strategy ${strategy.name}`);
         }
       }
     } catch (e: any) {
