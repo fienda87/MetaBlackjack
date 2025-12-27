@@ -7,7 +7,37 @@ import { webSocketManager } from '../providers/webSocketManager.js';
  */
 
 export const DEPOSIT_ESCROW_ABI = [
-  'event Deposit(address indexed player, uint256 amount, uint256 timestamp, uint256 totalBalance)',
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "balance",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "availableRewards",
+        "type": "uint256"
+      }
+    ],
+    "name": "Deposit",
+    "type": "event"
+  }
 ] as const;
 
 export const GAME_WITHDRAW_ABI = [

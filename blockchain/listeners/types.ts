@@ -10,10 +10,10 @@ export interface BlockchainEvent {
 }
 
 export interface DepositEvent extends BlockchainEvent {
-  player: string;
+  sender: string;
   amount: bigint;
-  timestamp: bigint;
-  totalBalance: bigint;
+  balance: bigint;
+  availableRewards: bigint;
 }
 
 export interface WithdrawEvent extends BlockchainEvent {
