@@ -41,7 +41,7 @@ async function startSpyListener() {
 
   // Get current block
   const currentBlock = await provider.getBlockNumber();
-  const startBlock = Math.max(0, currentBlock - 100); // Scan last 100 blocks
+  const startBlock = Math.max(0, currentBlock - 10); // Scan last 10 blocks (Alchemy Free tier limit)
   
   console.log(`📦 Scanning blocks ${startBlock} to ${currentBlock} for ALL logs...\n`);
 
