@@ -91,14 +91,16 @@ export class FaucetListener {
         // Double check args existence for TypeScript safety
         if (!('args' in event) || !event.args) continue;
 
+        const { args, transactionHash, blockNumber, index } = event;
+
         await this.handleClaimEvent({
-          claimer: event.args[0] as string,
-          amount: event.args[1] as bigint,
-          timestamp: event.args[2] as bigint,
-          transactionHash: event.transactionHash,
-          blockNumber: event.blockNumber,
-          blockTimestamp: Number(event.args[2]),
-          logIndex: event.logIndex,
+          claimer: args[0] as string,
+          amount: args[1] as bigint,
+          timestamp: args[2] as bigint,
+          transactionHash,
+          blockNumber,
+          blockTimestamp: Number(args[2]),
+          logIndex: index,
         });
       }
 
