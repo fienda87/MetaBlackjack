@@ -87,6 +87,11 @@ async function createCustomServer() {
     // Set socket instance for API routes
     setSocketInstance(io);
 
+    // 💓 Heartbeat Timer - Prevent Railway Idle Timeout
+    setInterval(() => {
+      console.log("💓 Jantung Server: Masih hidup jam " + new Date().toLocaleTimeString());
+    }, 60000); // Every 60 seconds (60000 ms)
+
     // Start the server first
     server.listen(currentPort, hostname, async () => {
       console.log(`> Ready on http://${hostname}:${currentPort}`);
