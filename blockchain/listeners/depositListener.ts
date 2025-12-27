@@ -1,443 +1,220 @@
-import { ethers } from 'ethers';
-import { db } from '@/lib/db';
+/**
+ * SPY MODE: Raw Event Listener for Deposit Diagnostics
+ * Captures ALL logs from DEPOSIT_ESCROW_ADDRESS to diagnose signature mismatches
+ */
+import { ethers } from 'ethers'; 
 import { 
   createProvider,
-  getWebSocketProvider,
-  initializeWebSocketProvider,
   CONTRACT_ADDRESSES, 
-  DEPOSIT_ESCROW_ABI,
-  formatGBC,
-  normalizeAddress,
-  NETWORK_CONFIG
+  NETWORK_CONFIG 
 } from './config.js';
-import type { DepositEvent, ProcessedTransaction } from './types.js';
 
-/**
- * Deposit Event Listener
- * Listens to DepositEscrow contract Deposit events and updates user balance
- */
-export class DepositListener {
-  private contract: ethers.Contract | null = null;
-  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
-  private isListening: boolean = false;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
-  private processedTxHashes: Set<string> = new Set();
+// Address shortcut
+const DEPOSIT_ESCROW_ADDRESS = CONTRACT_ADDRESSES.DEPOSIT_ESCROW;
+
+// Expected event signature hash
+const EXPECTED_SIGNATURE = 'Deposit(address,uint256,uint256,uint256)';
+const EXPECTED_SIGNATURE_HASH = ethers.id(EXPECTED_SIGNATURE);
+
+console.log('='.repeat(70));
+console.log('🔍 DEPOSIT ESCROW SPY MODE - RAW EVENT DIAGNOSTICS');
+console.log('='.repeat(70));
+console.log(`📍 Contract Address: ${DEPOSIT_ESCROW_ADDRESS}`);
+console.log(`🔑 Expected Signature: ${EXPECTED_SIGNATURE}`);
+console.log(`🔑 Expected Signature Hash: ${EXPECTED_SIGNATURE_HASH}`);
+console.log(`🌐 RPC URL: ${NETWORK_CONFIG.RPC_URL}`);
+console.log('='.repeat(70));
+
+async function startSpyListener() {
+  const provider = createProvider();
+  console.log(`📡 Provider created: ${provider.constructor.name}\n`);
+
+  // Verify contract is deployed
+  console.log(`🔎 Verifying contract deployment at ${DEPOSIT_ESCROW_ADDRESS}...`);
+  const code = await provider.getCode(DEPOSIT_ESCROW_ADDRESS);
+  if (code === '0x') {
+    console.error('❌ Contract not found at address!');
+    process.exit(1);
+  }
+  console.log('✅ Contract verified on-chain\n');
+
+  // Get current block
+  const currentBlock = await provider.getBlockNumber();
+  const startBlock = Math.max(0, currentBlock - 1000); // Scan last 1000 blocks
   
-  // Socket.IO instance (injected)
-  private io?: any;
+  console.log(`📦 Scanning blocks ${startBlock} to ${currentBlock} for ALL logs...\n`);
 
-  constructor(io?: any) {
-    this.io = io;
+  // Capture ALL logs (no filtering - raw mode)
+  const filter = {
+    address: DEPOSIT_ESCROW_ADDRESS,
+    fromBlock: startBlock,
+    toBlock: 'latest',
+  };
+
+  console.log('⏳ Fetching all logs (this may take a moment)...');
+  const logs = await provider.getLogs(filter);
+  
+  console.log(`\n📊 Total logs found: ${logs.length}`);
+  console.log('-'.repeat(70));
+
+  if (logs.length === 0) {
+    console.log('⚠️  No logs found in the specified block range.');
+    console.log('   Try increasing the block range or check if the contract has emitted any events.');
+    return;
+  }
+
+  // Analyze each log
+  for (const log of logs) {
+    console.log('\n' + '='.repeat(70));
+    console.log('📜 RAW LOG DETECTED');
+    console.log('='.repeat(70));
     
-    console.log('🏗️  DepositListener initialized (will connect on start)');
-    console.log('📍 Contract:', CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
-    console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
-  }
-
-  /**
-   * Start listening to Deposit events
-   */
-  async start(): Promise<void> {
-    if (this.isListening) {
-      console.warn('⚠️  DepositListener already running');
-      return;
-    }
-
-    try {
-      // Initialize WebSocket provider (with graceful fallback)
-      this.provider = await initializeWebSocketProvider();
-      
-      if (!this.provider) {
-        throw new Error('Failed to initialize WebSocket provider');
-      }
-
-      console.log('📍 Provider initialized:', this.provider.constructor.name);
-
-      // Create contract instance
-      this.contract = new ethers.Contract(
-        CONTRACT_ADDRESSES.DEPOSIT_ESCROW,
-        DEPOSIT_ESCROW_ABI,
-        this.provider
-      );
-
-      // Verify contract is deployed
-      const code = await this.provider.getCode(CONTRACT_ADDRESSES.DEPOSIT_ESCROW);
-      if (code === '0x') {
-        throw new Error('DepositEscrow contract not found at address');
-      }
-
-      // Get current block number
-      const currentBlock = await this.provider.getBlockNumber();
-      console.log(`📦 Starting from block ${currentBlock}`);
-
-      // Listen to new Deposit events
-      this.contract.on("Deposit", async (sender, amount, balance, availableRewards, event) => {
-          try {
-              console.log(`\n════════════════════════════════════════════════════════════`);
-              console.log(`💰 DEPOSIT EVENT DETECTED! (Signature Match ✅)`);
-              console.log(`👤 User: ${sender}`);
-              console.log(`💵 Amount: ${amount.toString()}`);
-              console.log(`🏦 Contract Balance: ${balance.toString()}`);
-              console.log(`🎁 Rewards Pool: ${availableRewards.toString()}`);
-              console.log(`════════════════════════════════════════════════════════════\n`);
-
-              // --- MASUKKAN LOGIKA UPDATE DATABASE KAMU DI SINI ---
-              // Contoh: await prisma.user.update(...) 
-              // PENTING: Gunakan variabel 'amount' untuk update saldo user.
-              
-              // Panggil fungsi proses deposit yang sudah ada (sesuaikan dengan kodemu)
-              // await processDeposit(sender, amount, event.transactionHash);
-
-              const blockNumber = event.log.blockNumber;
-              const block = await this.provider?.getBlock(blockNumber);
-              const blockTimestamp = block?.timestamp ?? Math.floor(Date.now() / 1000);
-
-              await this.handleDepositEvent({
-                sender,
-                amount,
-                balance,
-                availableRewards,
-                transactionHash: event.log.transactionHash,
-                blockNumber,
-                blockTimestamp,
-                logIndex: event.log.index,
-              });
-
-          } catch (error) {
-              console.error("❌ Error processing deposit event:", error);
-          }
-      });
-
-      this.isListening = true;
-      this.reconnectAttempts = 0;
-      console.log('✅ DepositListener started successfully');
-
-    } catch (error) {
-      console.error('❌ Failed to start DepositListener:', error instanceof Error ? error.message : error);
-      await this.handleReconnect();
-    }
-  }
-
-  /**
-   * Handle Deposit event
-   */
-  private async handleDepositEvent(event: DepositEvent): Promise<void> {
-    const txHash = event.transactionHash;
+    // Log basic info
+    console.log(`🧱 Block: ${log.blockNumber}`);
+    console.log(`📝 Transaction: ${log.transactionHash}`);
+    console.log(`🔢 Log Index: ${log.index}`);
+    console.log(`📭 Contract: ${log.address}`);
     
-    // Prevent duplicate processing
-    if (this.processedTxHashes.has(txHash)) {
-      console.log(`⏭️  Skipping duplicate tx: ${txHash}`);
-      return;
-    }
-
-    console.log(`\n🟢 Deposit Event Detected!`);
-    console.log(`├─ Sender: ${event.sender}`);
-    console.log(`├─ Amount: ${formatGBC(event.amount)} GBC`);
-    console.log(`├─ Tx Hash: ${txHash}`);
-    console.log(`└─ Block: ${event.blockNumber}`);
-
-    try {
-      // Wait for block confirmations
-      await this.waitForConfirmations(event.blockNumber);
-
-      // Process the deposit
-      const result = await this.processDeposit(event);
-
-      // Mark as processed
-      this.processedTxHashes.add(txHash);
-
-      // Emit Socket.IO event for real-time update
-      if (this.io && result) {
-        this.emitBalanceUpdate(result);
-      }
-
-      console.log(`✅ Deposit processed successfully`);
-
-    } catch (error) {
-      console.error(`❌ Failed to process deposit:`, error);
-      // Don't mark as processed so it can be retried
-    }
-  }
-
-  /**
-   * Process deposit: call internal API with retry logic
-   */
-  private async processDeposit(event: DepositEvent): Promise<ProcessedTransaction | null> {
-    const walletAddress = normalizeAddress(event.sender);
-    const depositAmount = formatGBC(event.amount);
-
-    // Try API first with retry logic
-    const apiResult = await this.callProcessingAPI({
-      walletAddress,
-      amount: depositAmount,
-      txHash: event.transactionHash,
-      blockNumber: event.blockNumber,
-      timestamp: event.blockTimestamp,
-      totalBalance: formatGBC(event.balance),
+    // Raw topics analysis
+    console.log('\n🔑 RAW TOPICS:');
+    console.log(`   topics.length: ${log.topics.length}`);
+    
+    log.topics.forEach((topic, idx) => {
+      console.log(`   topics[${idx}]: ${topic}`);
     });
-
-    if (apiResult) {
-      console.log(`💰 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
+    
+    // Extract signature from topic[0]
+    const rawSignature = log.topics[0] || 'undefined';
+    console.log('\n🎯 SIGNATURE ANALYSIS:');
+    console.log(`   Raw topic[0]: ${rawSignature}`);
+    console.log(`   Expected:     ${EXPECTED_SIGNATURE_HASH}`);
+    
+    // Compare signatures
+    const signatureMatch = rawSignature === EXPECTED_SIGNATURE_HASH;
+    console.log(`   Match:        ${signatureMatch ? '✅ YES' : '❌ NO'}`);
+    
+    if (!signatureMatch && rawSignature !== 'undefined') {
+      console.log('\n⚠️  SIGNATURE MISMATCH DETECTED!');
+      console.log('   Possible causes:');
+      console.log('   1. The event signature in the contract differs from our expected one');
+      console.log('   2. Different parameter types or order');
+      console.log('   3. Indexed parameters that moved to topics');
+      console.log('   4. Different event name entirely');
       
-      // Emit Socket.IO events directly from listener (since API routes can't access io)
-      if (this.io) {
-        const eventData = {
-          walletAddress: walletAddress.toLowerCase(),
-          type: 'deposit',
-          amount: depositAmount.toString(),
-          txHash: event.transactionHash,
-          timestamp: Date.now()
-        }
-        this.io.emit('blockchain:balance-updated', eventData)
-        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
-        
-        const balanceData = {
-          walletAddress: walletAddress.toLowerCase(),
-          gameBalance: apiResult.data.balanceAfter.toString(),
-          timestamp: Date.now()
-        }
-        this.io.emit('game:balance-updated', balanceData)
-        console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${apiResult.data.balanceAfter} GBC`)
-      }
+      // Try to identify what event this might be
+      console.log('\n🔬 EVENT IDENTIFICATION ATTEMPTS:');
       
-      return {
-        txHash: event.transactionHash,
-        userId: apiResult.data.userId,
-        type: 'DEPOSIT',
-        amount: depositAmount,
-        balanceBefore: apiResult.data.balanceBefore,
-        balanceAfter: apiResult.data.balanceAfter,
-        status: 'COMPLETED',
-        blockNumber: event.blockNumber,
-        timestamp: new Date(event.blockTimestamp * 1000),
-      };
-    }
-
-    // Fallback to direct DB access if API fails
-    console.warn('⚠️  API unavailable, falling back to direct DB access');
-    return await this.processDepositDirectDB(event, walletAddress, depositAmount);
-  }
-
-  /**
-   * Call internal processing API with retry logic
-   */
-  private async callProcessingAPI(data: any, maxRetries: number = 3): Promise<any | null> {
-    const apiKey = process.env.INTERNAL_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️  INTERNAL_API_KEY not configured');
-      return null;
-    }
-
-    const apiUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const endpoint = `${apiUrl}/api/deposit/process`;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📡 Calling API (attempt ${attempt}/${maxRetries}): ${endpoint}`);
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-internal-api-key': apiKey,
-          },
-          body: JSON.stringify(data),
-        });
-
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`API error ${response.status}: ${error}`);
-        }
-
-        const result = await response.json();
-        if (result.success) {
-          console.log(`✅ API call successful`);
-          return result;
-        }
-
-        throw new Error(result.error || 'API returned success=false');
-
-      } catch (error) {
-        console.error(`❌ API call failed (attempt ${attempt}/${maxRetries}):`, error);
-        
-        if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          console.log(`⏳ Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+      // Try common variations
+      const variations = [
+        'Deposit(address indexed sender, uint256 amount, uint256 balance, uint256 availableRewards)',
+        'Deposit(uint256 amount, uint256 balance, uint256 availableRewards)',
+        'Deposit(address,uint256,uint256,uint256)',
+        'Deposit(address indexed,uint256,uint256,uint256)',
+      ];
+      
+      for (const variation of variations) {
+        const hash = ethers.id(variation);
+        console.log(`   ${variation.substring(0, 50)}... => ${hash}`);
+        if (hash === rawSignature) {
+          console.log(`   ✅ MATCH FOUND: This is the actual signature!`);
         }
       }
     }
-
-    return null;
-  }
-
-  /**
-   * Fallback: Process deposit via direct DB access
-   */
-  private async processDepositDirectDB(
-    event: DepositEvent,
-    walletAddress: string,
-    depositAmount: number
-  ): Promise<ProcessedTransaction | null> {
+    
+    // Try manual decoding with AbiCoder
+    console.log('\n🧪 MANUAL DECODING ATTEMPT:');
+    
     try {
-      // Find or create user
-      let user = await db.user.findUnique({
-        where: { walletAddress },
-        select: { id: true, balance: true, walletAddress: true },
-      });
-
-      if (!user) {
-        console.log(`📝 Creating new user for wallet: ${walletAddress}`);
-        user = await db.user.create({
-          data: {
-            walletAddress,
-            balance: 0,
-            startingBalance: 0,
-          },
-          select: { id: true, balance: true, walletAddress: true },
-        });
+      const abiCoder = new ethers.AbiCoder();
+      
+      // Try different decoding strategies
+      const decodeStrategies = [
+        {
+          name: 'Standard Deposit',
+          types: ['address', 'uint256', 'uint256', 'uint256'],
+          values: log.topics.slice(1),
+          data: log.data,
+        },
+        {
+          name: 'Deposit with indexed sender',
+          types: ['address indexed', 'uint256', 'uint256', 'uint256'],
+          values: log.topics.slice(1),
+          data: log.data,
+        },
+        {
+          name: 'Deposit with only data (no topics)',
+          types: ['address', 'uint256', 'uint256', 'uint256'],
+          values: [],
+          data: log.data,
+        },
+      ];
+      
+      for (const strategy of decodeStrategies) {
+        try {
+          console.log(`   Trying: ${strategy.name}`);
+          const decoded = abiCoder.decode(strategy.types, strategy.values, strategy.data);
+          console.log(`   Decoded: ${JSON.stringify(decoded, null, 2)}`);
+          break;
+        } catch (e: any) {
+          console.log(`   Failed: ${e.message.substring(0, 80)}`);
+        }
       }
-
-      const balanceBefore = user.balance;
-      const balanceAfter = balanceBefore + depositAmount;
-
-      // Update user balance and totalDeposited in a transaction
-      await db.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: user!.id },
-          data: {
-            balance: { increment: depositAmount },
-            totalDeposited: { increment: depositAmount },
-          },
-        });
-
-        await tx.transaction.create({
-          data: {
-            userId: user!.id,
-            type: 'DEPOSIT',
-            amount: depositAmount.toString(),
-            balanceBefore,
-            balanceAfter,
-            status: 'COMPLETED',
-            referenceId: event.transactionHash,
-            metadata: {
-              blockNumber: event.blockNumber,
-              timestamp: event.blockTimestamp,
-              onChainAmount: event.amount.toString(),
-              fallback: true,
-            },
-          },
-        });
-      });
-
-      console.log(`💰 Balance updated (DB fallback): ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
-
-      return {
-        txHash: event.transactionHash,
-        userId: user.id,
-        type: 'DEPOSIT',
-        amount: depositAmount,
-        balanceBefore,
-        balanceAfter,
-        status: 'COMPLETED',
-        blockNumber: event.blockNumber,
-        timestamp: new Date(event.blockTimestamp * 1000),
-      };
-
-    } catch (error) {
-      console.error('❌ Database operation failed:', error);
-      throw error;
+    } catch (e: any) {
+      console.log(`   AbiCoder error: ${e.message}`);
     }
-  }
-
-  /**
-   * Wait for block confirmations before processing
-   */
-  private async waitForConfirmations(eventBlockNumber: number): Promise<void> {
-   const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
-
-   while (true) {
-     if (!this.provider) {
-       throw new Error('Provider not initialized');
-     }
-     const currentBlock = await this.provider.getBlockNumber();
-     const confirmations = currentBlock - eventBlockNumber;
-
-     if (confirmations >= requiredConfirmations) {
-       console.log(`✓ ${confirmations} confirmations received`);
-       break;
-     }
-
-     console.log(`⏳ Waiting for confirmations: ${confirmations}/${requiredConfirmations}`);
-     await new Promise(resolve => setTimeout(resolve, 3000));
-   }
-  }
-
-  /**
-   * Emit Socket.IO event for real-time balance update
-   */
-  private emitBalanceUpdate(transaction: ProcessedTransaction): void {
-    if (!this.io) return;
-
-    const event = {
-      type: 'deposit',
-      userId: transaction.userId,
-      amount: transaction.amount,
-      balanceBefore: transaction.balanceBefore,
-      balanceAfter: transaction.balanceAfter,
-      txHash: transaction.txHash,
-      timestamp: transaction.timestamp.toISOString(),
-    };
-
-    // Emit to specific user's room
-    this.io.to(transaction.userId).emit('balance:updated', event);
     
-    // Also emit to wallet address room (if connected via wallet)
-    this.io.emit('deposit:confirmed', event);
-
-    console.log(`📡 Socket.IO event emitted to user: ${transaction.userId}`);
-  }
-
-  /**
-   * Handle reconnection logic
-   */
-  private async handleReconnect(): Promise<void> {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('💀 Max reconnection attempts reached. Giving up.');
-      return;
+    // Raw data analysis
+    console.log('\n📦 RAW DATA:');
+    console.log(`   Data (hex): ${log.data}`);
+    console.log(`   Data (hex, 0x prefixed): ${log.data.startsWith('0x') ? log.data : '0x' + log.data}`);
+    
+    if (log.data !== '0x') {
+      try {
+        const dataBytes = ethers.getBytes(log.data);
+        console.log(`   Data (bytes): [${Array.from(dataBytes).join(', ')}]`);
+        console.log(`   Data length: ${dataBytes.length} bytes`);
+      } catch (e) {
+        console.log(`   Could not parse as bytes`);
+      }
     }
-
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     
-    console.log(`🔄 Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-    
-    await new Promise(resolve => setTimeout(resolve, delay));
-    await this.start();
+    // Summary for this log
+    console.log('\n' + '-'.repeat(70));
+    const logSummary = signatureMatch 
+      ? '✅ Standard Deposit event detected'
+      : '❓ Unknown event - signature mismatch';
+    console.log(`📋 Summary: ${logSummary}`);
   }
 
-  /**
-   * Stop listening
-   */
-  async stop(): Promise<void> {
-    if (!this.isListening) return;
-
-    if (this.contract) {
-      this.contract.removeAllListeners('Deposit');
-    }
-    this.isListening = false;
-    console.log('🛑 DepositListener stopped');
-  }
-
-  /**
-   * Get listener status
-   */
-  getStatus(): { isListening: boolean; processedCount: number; reconnectAttempts: number } {
-    return {
-      isListening: this.isListening,
-      processedCount: this.processedTxHashes.size,
-      reconnectAttempts: this.reconnectAttempts,
-    };
-  }
+  console.log('\n' + '='.repeat(70));
+  console.log('🔍 SPY MODE SCAN COMPLETE');
+  console.log('='.repeat(70));
+  console.log('\nIf no events matched the expected signature:');
+  console.log('1. Verify the actual event signature in the smart contract source');
+  console.log('2. Check if the contract has been upgraded');
+  console.log('3. Look for events with different names or parameter counts');
+  console.log('4. Consider checking transaction receipts for event signatures');
+  console.log('='.repeat(70));
 }
+
+// Handle errors
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 Unhandled rejection:', reason);
+  process.exit(1);
+});
+
+// Start the spy listener
+startSpyListener()
+  .then(() => {
+    console.log('\n✅ Spy listener scan complete. Exiting...');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
