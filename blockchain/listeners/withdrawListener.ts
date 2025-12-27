@@ -1,11 +1,8 @@
 import { ethers } from 'ethers';
 import { db } from '@/lib/db';
 import { 
-  createProvider,
-  getWebSocketProvider,
-  initializeWebSocketProvider,
+  createProvider, // 👈 KITA PAKAI HTTP (Sama seperti Deposit)
   CONTRACT_ADDRESSES, 
-  GAME_WITHDRAW_ABI,
   formatGBC,
   normalizeAddress,
   NETWORK_CONFIG
@@ -13,15 +10,19 @@ import {
 import type { WithdrawEvent, ProcessedTransaction } from './types.js';
 
 /**
- * Withdraw Event Listener
- * Listens to GameWithdraw contract Withdraw events and updates user balance
+ * 🛠️ FIXED WITHDRAW LISTENER (PRODUCTION READY)
+ * Strategy: HTTP Polling + DB Validation + Correct ABI
  */
+
+// 🔥 ABI UPDATE: Sesuai dengan parameter yang ada di kodingan lama kamu
+const CORRECT_WITHDRAW_ABI = [
+  "event Withdraw(address indexed player, uint256 amount, uint256 finalBalance, uint256 nonce, uint256 timestamp)"
+];
+
 export class WithdrawListener {
   private contract: ethers.Contract | null = null;
-  private provider: ethers.JsonRpcProvider | ethers.WebSocketProvider | null = null;
+  private provider: ethers.JsonRpcProvider | null = null; 
   private isListening: boolean = false;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
   private processedTxHashes: Set<string> = new Set();
   
   // Socket.IO instance (injected)
@@ -29,8 +30,7 @@ export class WithdrawListener {
 
   constructor(io?: any) {
     this.io = io;
-    
-    console.log('🏗️  WithdrawListener initialized (will connect on start)');
+    console.log('🏗️  WithdrawListener initialized (HTTP Polling Strategy)');
     console.log('📍 Contract:', CONTRACT_ADDRESSES.GAME_WITHDRAW);
     console.log('🌐 RPC:', NETWORK_CONFIG.RPC_URL);
   }
@@ -45,54 +45,64 @@ export class WithdrawListener {
     }
 
     try {
-      // Initialize WebSocket provider (with graceful fallback)
-      this.provider = await initializeWebSocketProvider();
+      // 1️⃣ GUNAKAN HTTP PROVIDER (Stabil)
+      this.provider = createProvider();
       
       if (!this.provider) {
-        throw new Error('Failed to initialize WebSocket provider');
+        throw new Error('Failed to initialize HTTP provider');
       }
 
-      console.log('📍 Provider initialized:', this.provider.constructor.name);
+      console.log('📍 Provider initialized (HTTP Mode)');
 
-      // Create contract instance
+      // 2️⃣ GUNAKAN ABI YANG SPESIFIK
       this.contract = new ethers.Contract(
         CONTRACT_ADDRESSES.GAME_WITHDRAW,
-        GAME_WITHDRAW_ABI,
+        CORRECT_WITHDRAW_ABI, 
         this.provider
       );
 
-      // Verify contract is deployed
+      // Cek koneksi contract
       const code = await this.provider.getCode(CONTRACT_ADDRESSES.GAME_WITHDRAW);
       if (code === '0x') {
         throw new Error('GameWithdraw contract not found at address');
       }
 
-      // Get current block number
       const currentBlock = await this.provider.getBlockNumber();
-      console.log(`📦 Starting from block ${currentBlock}`);
+      console.log(`📦 Withdraw Listener watching from block ${currentBlock}`);
 
-      // Listen to new Withdraw events
-      this.contract.on('Withdraw', async (player, amount, finalBalance, nonce, timestamp, event) => {
-        await this.handleWithdrawEvent({
-          player,
-          amount,
-          finalBalance,
-          nonce,
-          timestamp,
-          transactionHash: event.log.transactionHash,
-          blockNumber: event.log.blockNumber,
-          blockTimestamp: Number(timestamp),
-          logIndex: event.log.index,
-        });
+      // 3️⃣ LISTEN EVENT
+      this.contract.on("Withdraw", async (player, amount, finalBalance, nonce, timestamp, event) => {
+          try {
+              console.log(`\n════════════════════════════════════════════════════════════`);
+              console.log(`🔴 WITHDRAW EVENT DETECTED! (Block ${event.log.blockNumber})`);
+              console.log(`👤 Player: ${player}`);
+              console.log(`💸 Amount: ${formatGBC(amount)} GBC`); 
+              console.log(`🔢 Nonce: ${nonce}`);
+              console.log(`════════════════════════════════════════════════════════════\n`);
+
+              await this.handleWithdrawEvent({
+                player,
+                amount,
+                finalBalance,
+                nonce,
+                timestamp,
+                transactionHash: event.log.transactionHash,
+                blockNumber: event.log.blockNumber,
+                blockTimestamp: Number(timestamp),
+                logIndex: event.log.index,
+              });
+
+          } catch (error) {
+              console.error("❌ Error inside event callback:", error);
+          }
       });
 
       this.isListening = true;
-      this.reconnectAttempts = 0;
       console.log('✅ WithdrawListener started successfully');
 
     } catch (error) {
       console.error('❌ Failed to start WithdrawListener:', error instanceof Error ? error.message : error);
-      await this.handleReconnect();
+      setTimeout(() => this.start(), 5000); 
     }
   }
 
@@ -102,50 +112,49 @@ export class WithdrawListener {
   private async handleWithdrawEvent(event: WithdrawEvent): Promise<void> {
     const txHash = event.transactionHash;
     
-    // Prevent duplicate processing
+    // 🛡️ SECURITY CHECK 1: Cek RAM
     if (this.processedTxHashes.has(txHash)) {
-      console.log(`⏭️  Skipping duplicate tx: ${txHash}`);
+      console.log(`⏭️  Skipping duplicate tx (RAM): ${txHash}`);
       return;
     }
 
-    console.log(`\n🔴 Withdraw Event Detected!`);
-    console.log(`├─ Player: ${event.player}`);
-    console.log(`├─ Amount: ${formatGBC(event.amount)} GBC`);
-    console.log(`├─ Nonce: ${event.nonce.toString()}`);
-    console.log(`├─ Tx Hash: ${txHash}`);
-    console.log(`└─ Block: ${event.blockNumber}`);
+    // 🛡️ SECURITY CHECK 2: Cek Database (Anti-Restart)
+    const existingTx = await db.transaction.findFirst({
+        where: { referenceId: txHash }
+    });
 
+    if (existingTx) {
+        console.log(`⏭️  Skipping duplicate tx (DB): ${txHash} - Already Processed`);
+        this.processedTxHashes.add(txHash);
+        return;
+    }
+
+    console.log(`\n🟢 Processing Withdraw Logic...`);
+    
     try {
-      // Wait for block confirmations
-      await this.waitForConfirmations(event.blockNumber);
-
-      // Process the withdrawal
       const result = await this.processWithdraw(event);
 
-      // Mark as processed
       this.processedTxHashes.add(txHash);
 
-      // Emit Socket.IO event for real-time update
       if (this.io && result) {
         this.emitBalanceUpdate(result);
       }
 
-      console.log(`✅ Withdrawal processed successfully`);
+      console.log(`✅ Withdrawal FULLY processed successfully`);
 
     } catch (error) {
-      console.error(`❌ Failed to process withdrawal:`, error);
-      // Don't mark as processed so it can be retried
+      console.error(`❌ Failed to process withdrawal logic:`, error);
     }
   }
 
   /**
-   * Process withdrawal: call internal API with retry logic
+   * Process withdrawal
    */
   private async processWithdraw(event: WithdrawEvent): Promise<ProcessedTransaction | null> {
     const walletAddress = normalizeAddress(event.player);
     const withdrawAmount = formatGBC(event.amount);
 
-    // Try API first with retry logic
+    // Try API first
     const apiResult = await this.callProcessingAPI({
       walletAddress,
       amount: withdrawAmount,
@@ -156,9 +165,9 @@ export class WithdrawListener {
     });
 
     if (apiResult) {
-      console.log(`💸 Balance updated via API: ${apiResult.data.balanceBefore.toFixed(2)} → ${apiResult.data.balanceAfter.toFixed(2)} GBC`);
+      console.log(`💸 Balance updated via API: ${apiResult.data.balanceBefore} → ${apiResult.data.balanceAfter}`);
       
-      // Emit Socket.IO events directly from listener
+      // Emit events manual (backup jika API tidak emit)
       if (this.io) {
         const eventData = {
           walletAddress: walletAddress.toLowerCase(),
@@ -166,17 +175,13 @@ export class WithdrawListener {
           amount: withdrawAmount.toString(),
           txHash: event.transactionHash,
           timestamp: Date.now()
-        }
-        this.io.emit('blockchain:balance-updated', eventData)
-        console.log(`📡 Emitted blockchain:balance-updated for ${walletAddress}`)
+        };
+        this.io.emit('blockchain:balance-updated', eventData);
         
-        const balanceData = {
-          walletAddress: walletAddress.toLowerCase(),
-          gameBalance: apiResult.data.balanceAfter.toString(),
-          timestamp: Date.now()
-        }
-        this.io.emit('game:balance-updated', balanceData)
-        console.log(`🎮 Emitted game:balance-updated for ${walletAddress}: ${apiResult.data.balanceAfter} GBC`)
+        this.io.emit('balance:updated', {
+            userId: apiResult.data.userId,
+            balanceAfter: apiResult.data.balanceAfter
+        });
       }
       
       return {
@@ -192,66 +197,45 @@ export class WithdrawListener {
       };
     }
 
-    // Fallback to direct DB access if API fails
+    // Fallback to DB
     console.warn('⚠️  API unavailable, falling back to direct DB access');
     return await this.processWithdrawDirectDB(event, walletAddress, withdrawAmount);
   }
 
   /**
-   * Call internal processing API with retry logic
+   * Call internal API
    */
   private async callProcessingAPI(data: any, maxRetries: number = 3): Promise<any | null> {
     const apiKey = process.env.INTERNAL_API_KEY;
-    if (!apiKey) {
-      console.warn('⚠️  INTERNAL_API_KEY not configured');
-      return null;
-    }
-
     const apiUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const endpoint = `${apiUrl}/api/withdrawal/process`;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log(`📡 Calling API (attempt ${attempt}/${maxRetries}): ${endpoint}`);
-        
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-internal-api-key': apiKey,
+            'x-internal-api-key': apiKey || '',
           },
           body: JSON.stringify(data),
         });
 
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`API error ${response.status}: ${error}`);
-        }
-
+        if (!response.ok) throw new Error(`API error ${response.status}`);
         const result = await response.json();
-        if (result.success) {
-          console.log(`✅ API call successful`);
-          return result;
-        }
-
-        throw new Error(result.error || 'API returned success=false');
+        if (result.success) return result;
 
       } catch (error) {
-        console.error(`❌ API call failed (attempt ${attempt}/${maxRetries}):`, error);
-        
         if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          console.log(`⏳ Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
-
     return null;
   }
 
   /**
-   * Fallback: Process withdrawal via direct DB access
+   * Fallback: Process via DB
    */
   private async processWithdrawDirectDB(
     event: WithdrawEvent,
@@ -259,7 +243,6 @@ export class WithdrawListener {
     withdrawAmount: number
   ): Promise<ProcessedTransaction | null> {
     try {
-      // Find user
       const user = await db.user.findUnique({
         where: { walletAddress },
         select: { id: true, balance: true, walletAddress: true },
@@ -271,13 +254,9 @@ export class WithdrawListener {
       }
 
       const balanceBefore = user.balance;
+      // Pastikan balance tidak negatif
       const balanceAfter = Math.max(0, balanceBefore - withdrawAmount);
 
-      if (balanceBefore < withdrawAmount) {
-        console.warn(`⚠️  Insufficient balance for withdrawal: ${balanceBefore} < ${withdrawAmount}`);
-      }
-
-      // Update user balance and totalWithdrawn in a transaction
       await db.$transaction(async (tx) => {
         await tx.user.update({
           where: { id: user.id },
@@ -291,7 +270,7 @@ export class WithdrawListener {
           data: {
             userId: user.id,
             type: 'WITHDRAWAL',
-            amount: withdrawAmount.toString(),
+            amount: withdrawAmount.toString(), // 👈 FIX PRISMA TYPE
             balanceBefore,
             balanceAfter,
             status: 'COMPLETED',
@@ -301,14 +280,13 @@ export class WithdrawListener {
               timestamp: event.blockTimestamp,
               nonce: event.nonce.toString(),
               onChainAmount: event.amount.toString(),
-              finalBalance: event.finalBalance.toString(),
               fallback: true,
             },
           },
         });
       });
 
-      console.log(`💸 Balance updated (DB fallback): ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} GBC`);
+      console.log(`💸 Balance updated (DB fallback): ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)}`);
 
       return {
         txHash: event.transactionHash,
@@ -328,32 +306,6 @@ export class WithdrawListener {
     }
   }
 
-  /**
-   * Wait for block confirmations before processing
-   */
-  private async waitForConfirmations(eventBlockNumber: number): Promise<void> {
-    const requiredConfirmations = NETWORK_CONFIG.BLOCK_CONFIRMATION;
-    
-    while (true) {
-      if (!this.provider) {
-        throw new Error('Provider not initialized');
-      }
-      const currentBlock = await this.provider.getBlockNumber();
-      const confirmations = currentBlock - eventBlockNumber;
-      
-      if (confirmations >= requiredConfirmations) {
-        console.log(`✓ ${confirmations} confirmations received`);
-        break;
-      }
-      
-      console.log(`⏳ Waiting for confirmations: ${confirmations}/${requiredConfirmations}`);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-    }
-  }
-
-  /**
-   * Emit Socket.IO event for real-time balance update
-   */
   private emitBalanceUpdate(transaction: ProcessedTransaction): void {
     if (!this.io) return;
 
@@ -367,39 +319,12 @@ export class WithdrawListener {
       timestamp: transaction.timestamp.toISOString(),
     };
 
-    // Emit to specific user's room
     this.io.to(transaction.userId).emit('balance:updated', event);
-    
-    // Also emit withdrawal confirmed event
     this.io.emit('withdrawal:confirmed', event);
-
-    console.log(`📡 Socket.IO event emitted to user: ${transaction.userId}`);
   }
 
-  /**
-   * Handle reconnection logic
-   */
-  private async handleReconnect(): Promise<void> {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('💀 Max reconnection attempts reached. Giving up.');
-      return;
-    }
-
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    
-    console.log(`🔄 Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-    
-    await new Promise(resolve => setTimeout(resolve, delay));
-    await this.start();
-  }
-
-  /**
-   * Stop listening
-   */
   async stop(): Promise<void> {
     if (!this.isListening) return;
-
     if (this.contract) {
       this.contract.removeAllListeners('Withdraw');
     }
@@ -407,14 +332,11 @@ export class WithdrawListener {
     console.log('🛑 WithdrawListener stopped');
   }
 
-  /**
-   * Get listener status
-   */
-  getStatus(): { isListening: boolean; processedCount: number; reconnectAttempts: number } {
-    return {
-      isListening: this.isListening,
-      processedCount: this.processedTxHashes.size,
-      reconnectAttempts: this.reconnectAttempts,
-    };
+  public getStatus() {
+      return {
+          isListening: this.isListening,
+          processedCount: this.processedTxHashes.size,
+          mode: 'HTTP_POLLING'
+      };
   }
 }
