@@ -294,31 +294,30 @@ export async function POST(request: NextRequest) {
       // Ingat: Modal (Bet) SUDAH diambil saat Start Game (/play).
       // Jadi kita harus mengembalikan Modal + Profit.
 
-      let multiplier = 0;
+      // 🔧 FIX: Pastikan currentBet dikonversi jadi Number (Float)
+      // Prisma kadang mengembalikan Decimal yang tidak bisa langsung dikali
+      const betValue = Number(updatedGame.currentBet ?? game.currentBet) || 0
+      betAmount = betValue
 
+      let multiplier = 0
       if (result === 'BLACKJACK') {
-        multiplier = 2.5; // (Contoh: Bet 10 -> Terima 25) -> Profit bersih 15
+        multiplier = 2.5
       } else if (result === 'WIN') {
-        multiplier = 2.0; // (Contoh: Bet 10 -> Terima 20) -> Profit bersih 10
+        multiplier = 2.0
       } else if (result === 'PUSH') {
-        multiplier = 1.0; // (Contoh: Bet 10 -> Terima 10) -> Balik Modal
+        multiplier = 1.0
       } else if (result === 'SURRENDER') {
-        multiplier = 0.5; // (Contoh: Bet 10 -> Terima 5) -> Kehilangan setengah modal
+        multiplier = 0.5
       } else {
-        multiplier = 0.0; // LOSE -> Tidak terima apa-apa
+        multiplier = 0.0
       }
 
-      payout = betAmount * multiplier;
+      // Hitung Payout
+      payout = betValue * multiplier
+      balanceChange = payout
 
-      // Handle Double Down (Jika ada fitur ini)
-      if (action === 'double_down') {
-        // Double down biasanya bet x2. Kita anggap bet tambahan diambil sekarang.
-        // Tapi untuk simplifikasi debug sekarang, pastikan logic dasar ini jalan dulu.
-        // balanceChange = payout - currentBet; (Complex logic, skip dulu)
-        balanceChange = payout;
-      } else {
-        balanceChange = payout;
-      }
+      // 🔍 DEBUGGING LOG (Cek ini di Terminal Railway/Local)
+      console.log(`💰 PAYOUT CALC: Bet=${betValue}, Result=${result}, Pay=${payout}`)
 
       // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
@@ -326,7 +325,7 @@ export async function POST(request: NextRequest) {
         balanceChange = 0
       }
 
-      netProfit = payout - betAmount
+      netProfit = payout - betValue
       if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
         netProfit = 0
       }
@@ -334,8 +333,8 @@ export async function POST(request: NextRequest) {
 
     const isSettlement = finalGameState === 'ENDED'
 
-    // 🚀 PARALLEL: Update game and user balance atomically
-    const [updatedGameRecord, updatedUser] = await executeParallel(
+    // --- DATABASE UPDATE ---
+    const [updatedGameRecord, updatedUser] = await db.$transaction([
       db.game.update({
         where: { id: gameId },
         data: {
@@ -347,24 +346,30 @@ export async function POST(request: NextRequest) {
           state: finalGameState as any,
           hasSurrendered: updatedGame.hasSurrendered,
           hasInsurance: updatedGame.hasInsurance,
-          ...(isSettlement ? {
-            result: result as any,
-            netProfit,
-            winAmount: payout,
-            endedAt: new Date(),
-          } : {}),
+          ...(isSettlement
+            ? {
+                result: result as any,
+                netProfit,
+                winAmount: payout,
+                endedAt: new Date(),
+              }
+            : {}),
         },
       }),
+      // ✅ UPDATE SALDO
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: { increment: balanceChange } },  // ✅ ATOMIC: Add full payout (stake + profit), since bet was already deducted in play.ts
+            data: { balance: { increment: balanceChange } },
             select: { balance: true },
           })
-        : Promise.resolve(null)
-    )
+        : db.user.findUnique({
+            where: { id: userId },
+            select: { balance: true },
+          }),
+    ])
 
-    const newBalance = isSettlement && updatedUser ? updatedUser.balance : user.balance
+    const newBalance = updatedUser?.balance ?? user.balance
     const balanceBefore = user.balance
 
     // 🚀 SMART CACHE INVALIDATION
