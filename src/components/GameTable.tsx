@@ -673,29 +673,28 @@ const GameTable: React.FC = memo(() => {
       setDealtPlayerCards([])
       _setDealtDealerCards([])
       setLastPlayedResultSound(null) // Reset sound flag for new game
-      
-      // Update balance via WebSocket (bet deduction)
-      socketManager.updateBalance(-betAmount, 'bet')
-      
-      // Start the game first
-      const resultAction = startNewGame({ userId: user.id, betAmount })
-      dispatch(resultAction)
-      
+
+      // Start the game and wait for API response
+      await dispatch(startNewGame({ userId: user.id, betAmount }))
+
+      // Refresh off-chain balance from database
+      fetchGameBalanceImmediate()
+
       // Play card dealing sounds with delay
       setTimeout(() => audio.playCardDealSound(), 300)
       setTimeout(() => audio.playCardDealSound(), 600)
       setTimeout(() => audio.playCardDealSound(), 900)
       setTimeout(() => audio.playCardDealSound(), 1200)
-      
+
       setShowDealConfirmation(false)
-      
+
       // Note: In a real implementation, we would wait for the game response
       // then animate the cards being dealt. For now, we'll simulate it.
       setTimeout(() => {
         setIsDealingCards(false)
       }, 2000) // Reset dealing state after animation
     }
-  }, [user, betAmount, currentBalance, dispatch, socketManager, audio])
+  }, [user, betAmount, currentBalance, dispatch, audio, fetchGameBalanceImmediate])
 
   const handleCancelDeal = useCallback(() => {
     setShowDealConfirmation(false)
