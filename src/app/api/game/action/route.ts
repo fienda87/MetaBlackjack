@@ -1,60 +1,16 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-// Static imports for critical path (must be available immediately)
 import { sanitizeSqlInput } from '@/lib/validation'
 import { verifyJWT } from '@/lib/security'
 import { perfMetrics } from '@/lib/performance-monitor'
-
-// Dynamic imports for heavy dependencies (loaded on demand)
-const getGameLogic = async () => {
-  const gameLogicModule = await import('@/lib/game-logic')
-  return {
-    GameEngine: (await import('@/domain/usecases/GameEngine')).GameEngine,
-    splitHand: gameLogicModule.splitHand,
-  }
-}
-
-const getRateLimit = async () => {
-  const rateLimitModule = await import('@/lib/rate-limit')
-  return rateLimitModule.rateLimitMiddleware
-}
-
-const getCors = async () => {
-  const corsModule = await import('@/lib/cors')
-  return {
-    corsMiddleware: corsModule.corsMiddleware,
-    getSecurityHeaders: corsModule.getSecurityHeaders,
-  }
-}
-
-const getQueryHelpers = async () => {
-  const queryHelpersModule = await import('@/lib/query-helpers')
-  return {
-    executeParallel: queryHelpersModule.executeParallel,
-    USER_SELECT: queryHelpersModule.USER_SELECT,
-    GAME_SELECT: queryHelpersModule.GAME_SELECT,
-    getSafeLimit: queryHelpersModule.getSafeLimit,
-  }
-}
-
-const getCacheOperations = async () => {
-  const cacheOperationsModule = await import('@/lib/cache-operations')
-  return {
-    cacheGetOrFetch: cacheOperationsModule.cacheGetOrFetch,
-    CACHE_STRATEGIES: cacheOperationsModule.CACHE_STRATEGIES,
-  }
-}
-
-const getCacheInvalidation = async () => {
-  const cacheInvalidationModule = await import('@/lib/cache-invalidation')
-  return cacheInvalidationModule.cacheInvalidation
-}
-
-const getDb = async () => {
-  const dbModule = await import('@/lib/db')
-  return dbModule.db
-}
+import { GameEngine } from '@/domain/usecases/GameEngine'
+import { rateLimitMiddleware } from '@/lib/rate-limit'
+import { corsMiddleware, getSecurityHeaders } from '@/lib/cors'
+import { executeParallel, USER_SELECT, GAME_SELECT } from '@/lib/query-helpers'
+import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
+import { cacheInvalidation } from '@/lib/cache-invalidation'
+import { db } from '@/lib/db'
 
 // 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
@@ -89,37 +45,33 @@ function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, b
     .catch((err: any) => console.error('Session stats update failed:', err))
 }
 
+// Auto-translator for legacy schema mappings
+function translateLegacyAction(action: string): string {
+  const actionMap: Record<string, string> = {
+    'insurance': 'INSURANCE_ACCEPT',
+    'set_ace_value': 'HIT' // Safe fallback for ace value selection
+  }
+  return actionMap[action] || action.toUpperCase()
+}
+
 export async function POST(request: NextRequest) {
   const perfLabel = 'game:action'
   perfMetrics.start(perfLabel)
 
-  // 🚀 SKIP MIDDLEWARE IN DEV for maximum speed
-  let cors: any = { isAllowedOrigin: true, headers: {} }
-  let rateLimit: any = { success: true, headers: {} }
-  let decodedToken: any = null
-  let getSecurityHeadersFn: any = () => ({})
-
   try {
     const isDevelopment = process.env.NODE_ENV === 'development'
-
+    
+    // Production safeguards
     if (!isDevelopment) {
-      // Load dependencies dynamically only when needed
-      const [corsMod, rateLimitMod, { getSecurityHeaders }] = await Promise.all([
-        getCors(),
-        getRateLimit(),
-        import('@/lib/cors')
-      ])
-      getSecurityHeadersFn = getSecurityHeaders
-
-      // CORS check (production only)
-      cors = corsMod.corsMiddleware(request)
+      // CORS check
+      const cors = corsMiddleware(request)
       if (cors instanceof NextResponse) return cors
       if (!cors.isAllowedOrigin) {
         return NextResponse.json({ error: 'CORS policy violation' }, { status: 403, headers: cors.headers })
       }
 
-      // Rate limiting (production only)
-      rateLimit = await rateLimitMod(request, 'game')
+      // Rate limiting
+      const rateLimit = await rateLimitMiddleware(request, 'game')
       if (!rateLimit.success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -127,56 +79,36 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Authentication (production only)
+      // Authentication
       const authHeader = request.headers.get('authorization')
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeadersFn() } })
+        return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
       }
 
       const token = authHeader.substring(7)
-      try {
-        decodedToken = await verifyJWT(token)
-      } catch {
-        return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeadersFn() } })
+      const decodedToken = await verifyJWT(token)
+      const body = await request.json()
+      if (!decodedToken || decodedToken.userId !== body.userId) {
+        return NextResponse.json({ error: 'Unauthorized access' }, { status: 403, headers: { ...cors.headers, ...getSecurityHeaders() } })
       }
     }
 
-    // Load dependencies dynamically for game logic
-    const [
-      { GameEngine, splitHand },
-      { executeParallel, USER_SELECT, GAME_SELECT },
-      { cacheGetOrFetch, CACHE_STRATEGIES },
-      cacheInvalidMod,
-      db
-    ] = await Promise.all([
-      getGameLogic(),
-      getQueryHelpers(),
-      getCacheOperations(),
-      getCacheInvalidation(),
-      getDb()
-    ])
-
-    const cacheInvalidation = cacheInvalidMod
-
-    // 🚀 Parse request (no sanitization in dev for speed)
+    // Parse and sanitize request
     const body = await request.json()
     const { gameId, action, userId, payload } = isDevelopment ? body : sanitizeSqlInput(body)
 
-    // 🚀 Fast validation
+    // Validate required fields
     if (!gameId || !action || !userId) {
       return NextResponse.json({ error: 'Missing required fields: gameId, action, userId' }, { status: 400 })
     }
 
-    if (!isDevelopment && decodedToken && decodedToken.userId !== userId) {
-      return NextResponse.json({ error: 'Unauthorized access' }, { status: 403 })
-    }
-
-    const validActions = ['hit', 'stand', 'double_down', 'insurance', 'split', 'surrender', 'split_hit', 'split_stand', 'set_ace_value']
+    // Validate action (NO SPLIT - cleaner codebase)
+    const validActions = ['hit', 'stand', 'double_down', 'insurance', 'surrender', 'set_ace_value']
     if (!validActions.includes(action)) {
-      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid action. Available: hit, stand, double_down, insurance, surrender, set_ace_value' }, { status: 400 })
     }
 
-    // 🚀 CACHED + PARALLEL: Get game and user simultaneously with caching
+    // 🚀 CACHED + PARALLEL: Get game and user simultaneously
     const [game, user] = await executeParallel(
       cacheGetOrFetch(
         CACHE_STRATEGIES.GAME_STATE(gameId).key,
@@ -205,275 +137,152 @@ export async function POST(request: NextRequest) {
     if (game.playerId !== userId) return NextResponse.json({ error: 'Unauthorized access to game' }, { status: 403 })
     if (game.state !== 'PLAYING') return NextResponse.json({ error: 'Game is not in playing state' }, { status: 400 })
 
+    // Initialize game state
     let updatedGame = { ...game }
     let deck = [...game.deck as any[]]
     let playerCards = [...(game.playerHand as any).cards]
     let dealerCards = [...(game.dealerHand as any).cards]
-    let splitHands = (game.splitHands as any[]) || []
-
-  // Declare variables that might be used in switch
-  let result: string | null = null
-  let netProfit: number = 0
-  let finalGameState = 'PLAYING'
-  let payout = 0
 
     // Process action
-    switch (action) {
-      case 'hit':
-        const newCard = deck.pop()
-        if (!newCard) {
-          return NextResponse.json(
-            { error: 'No cards left in deck' },
-            { status: 400, headers: cors.headers }
-          )
-        }
-        playerCards.push(newCard)
-        break
+    let result: string | null = null
+    let netProfit = 0
+    let finalGameState = 'PLAYING'
+    let payout = 0
+    let betAmount = Number(game.currentBet) || 0
 
-      case 'stand':
-        // Smart dealer plays against player hand
-        let dealerHand = GameEngine.calculateHandValue(dealerCards)
-        const playerValue = GameEngine.calculateHandValue(playerCards).value
-        
-        // Smart dealer logic - try to beat player without busting
-        while (dealerHand.value < 17 && deck.length > 0) {
-          const card = deck.pop()
-          if (!card) break // No more cards in deck
-          dealerCards.push(card)
-          dealerHand = GameEngine.calculateHandValue(dealerCards)
-        }
-        
-        // If dealer has less than player and player <= 21, try to get closer
-        if (dealerHand.value < playerValue && playerValue <= 21 && dealerHand.value >= 17 && deck.length > 0) {
-          // Consider hitting on 17 if player is much higher
-          if (dealerHand.value === 17 && playerValue >= 20) {
-            // Risky move - 30% chance to hit on 17 against player's 20+
-            if (Math.random() < 0.3) {
-              const card = deck.pop()
-              if (card) {
-                dealerCards.push(card)
-                dealerHand = GameEngine.calculateHandValue(dealerCards)
-              }
-            }
-          }
-          // Consider hitting on 18 if player has 19-21
-          else if (dealerHand.value === 18 && playerValue >= 19 && deck.length > 0) {
-            // Very risky move - 15% chance to hit on 18 against player's 19+
-            if (Math.random() < 0.15) {
-              const card = deck.pop()
-              if (card) {
-                dealerCards.push(card)
-                dealerHand = GameEngine.calculateHandValue(dealerCards)
-              }
-            }
-          }
-        }
-        break
+    try {
+      switch (action) {
+        case 'hit':
+          const hitCard = deck.pop()
+          if (!hitCard) throw new Error('No cards left in deck')
+          playerCards.push(hitCard)
+          break
 
-      case 'double_down':
-        // Validate: Can only double down with exactly 2 cards
-        if (playerCards.length !== 2) {
-          return NextResponse.json(
-            { error: 'Can only double down with 2 cards' },
-            { status: 400 }
-          )
-        }
-        
-        // Validate: User must have enough balance for the additional bet
-        const additionalBet = game.currentBet
-        if (user.balance < additionalBet) {
-          return NextResponse.json(
-            { error: 'Insufficient balance for double down' },
-            { status: 400, headers: cors.headers }
-          )
-        }
-        
-        // Deduct the additional bet from user balance immediately
-        await db.user.update({
-          where: { id: userId },
-          data: { balance: user.balance - additionalBet }
-        })
-        
-        // Update user object for later calculations
-        user.balance = user.balance - additionalBet
-        
-        // Draw one card
-        const doubleCard = deck.pop()
-        if (!doubleCard) {
-          // Refund if no cards available
+        case 'stand':
+          // Dealer plays according to standard rules
+          let dealerHand = GameEngine.calculateHandValue(dealerCards)
+          while (dealerHand.value < 17 && deck.length > 0) {
+            const card = deck.pop()
+            if (!card) break
+            dealerCards.push(card)
+            dealerHand = GameEngine.calculateHandValue(dealerCards)
+          }
+          break
+
+        case 'double_down':
+          // Validate: exactly 2 cards
+          if (playerCards.length !== 2) {
+            return NextResponse.json({ error: 'Can only double down with 2 cards' }, { status: 400 })
+          }
+          
+          // Validate: sufficient balance
+          const additionalBet = betAmount
+          if (user.balance < additionalBet) {
+            return NextResponse.json({ error: 'Insufficient balance for double down' }, { status: 400 })
+          }
+          
+          // Deduct additional bet atomically
           await db.user.update({
             where: { id: userId },
-            data: { balance: user.balance + additionalBet }
+            data: { balance: { decrement: additionalBet } }
           })
-          return NextResponse.json(
-            { error: 'No cards left in deck' },
-            { status: 400, headers: cors.headers }
-          )
-        }
-        
-        playerCards.push(doubleCard)
-        updatedGame.currentBet = game.currentBet * 2
-        
-        // After double down, player cannot take more actions
-        // Automatically trigger dealer play (like STAND)
-        let ddDealerHand = GameEngine.calculateHandValue(dealerCards)
-        
-        while (ddDealerHand.value < 17 && deck.length > 0) {
-          const card = deck.pop()
-          if (!card) break
-          dealerCards.push(card)
-          ddDealerHand = GameEngine.calculateHandValue(dealerCards)
-        }
-        break
+          
+          // Draw exactly one card
+          const doubleCard = deck.pop()
+          if (!doubleCard) {
+            // Refund on error
+            await db.user.update({
+              where: { id: userId },
+              data: { balance: { increment: additionalBet } }
+            })
+            throw new Error('No cards left in deck')
+          }
+          
+          playerCards.push(doubleCard)
+          betAmount = betAmount * 2
+          updatedGame.currentBet = betAmount
+          
+          // Dealer plays after double down
+          let ddDealerHand = GameEngine.calculateHandValue(dealerCards)
+          while (ddDealerHand.value < 17 && deck.length > 0) {
+            const card = deck.pop()
+            if (!card) break
+            dealerCards.push(card)
+            ddDealerHand = GameEngine.calculateHandValue(dealerCards)
+          }
+          break
 
-      case 'insurance':
-        // Check if dealer shows Ace
-        if (dealerCards.length !== 2 || dealerCards[0].rank !== 'A') {
-          return NextResponse.json(
-            { error: 'Insurance only available when dealer shows Ace' },
-            { status: 400 }
-          )
-        }
-        if (game.hasInsurance) {
-          return NextResponse.json(
-            { error: 'Insurance already taken' },
-            { status: 400 }
-          )
-        }
-        const insuranceBet = Math.floor(game.currentBet / 2)
-        if (user.balance < insuranceBet) {
-          return NextResponse.json(
-            { error: 'Insufficient balance for insurance' },
-            { status: 400 }
-          )
-        }
-        updatedGame.insuranceBet = insuranceBet
-        updatedGame.hasInsurance = true
-        break
-
-      case 'split':
-        const playerHand = GameEngine.calculateHandValue(playerCards)
-        if (playerCards.length !== 2 || playerCards[0].rank !== playerCards[1].rank) {
-          return NextResponse.json(
-            { error: 'Can only split cards of the same rank' },
-            { status: 400 }
-          )
-        }
-        if (game.hasSplit) {
-          return NextResponse.json(
-            { error: 'Already split' },
-            { status: 400 }
-          )
-        }
-        if (user.balance < game.currentBet) {
-          return NextResponse.json(
-            { error: 'Insufficient balance for split' },
-            { status: 400 }
-          )
-        }
-        
-        // Create split hands - convert to proper Hand type first
-        const properHand: import('@/lib/game-logic').Hand = {
-          cards: playerHand.cards,
-          value: playerHand.value,
-          isBust: playerHand.isBust,
-          isBlackjack: playerHand.isBlackjack,
-          isSplittable: true,
-          canSurrender: false,
-          hasSplit: false
-        }
-        const { hand1, hand2 } = splitHand(properHand)
-        splitHands = [hand1, hand2]
-        playerCards = [] // Clear main hand when split
-        updatedGame.hasSplit = true
-        updatedGame.currentBet = game.currentBet * 2
-        break
-
-      case 'surrender':
-        if (playerCards.length !== 2) {
-          return NextResponse.json(
-            { error: 'Can only surrender with 2 cards' },
-            { status: 400 }
-          )
-        }
-        if (game.hasSplit || game.hasSurrendered) {
-          return NextResponse.json(
-            { error: 'Cannot surrender after split or already surrendered' },
-            { status: 400 }
-          )
-        }
-        updatedGame.hasSurrendered = true
-        finalGameState = 'SURRENDERED'
-        result = 'SURRENDER'
-        payout = Math.floor(game.currentBet / 2)
-        netProfit = payout - game.currentBet
-        break
-
-      case 'split_hit':
-        const handIndex = payload?.handIndex || 0
-        if (!splitHands[handIndex]) {
-          return NextResponse.json(
-            { error: 'Invalid split hand index' },
-            { status: 400 }
-          )
-        }
-        const splitCard = deck.pop()!
-        const updatedSplitHand = GameEngine.calculateHandValue([...splitHands[handIndex].cards, splitCard])
-        splitHands[handIndex] = updatedSplitHand
-        break
-
-      case 'split_stand':
-        // Hand is already standing, just check if all hands are done
-        break
-
-      case 'set_ace_value':
-        const aceValue = payload?.aceValue
-        if (aceValue !== 1 && aceValue !== 11) {
-          return NextResponse.json(
-            { error: 'Ace value must be 1 or 11' },
-            { status: 400 }
-          )
-        }
-        
-        // Update hand with new ace value
-        if (splitHands.length > 0) {
-          splitHands = splitHands.map(hand => {
-            if (GameEngine.canChooseAceValue(hand)) {
-              return GameEngine.calculateHandValue(hand.cards, aceValue)
-            }
-            return hand
+        case 'insurance':
+          // Check dealer shows Ace
+          if (dealerCards.length !== 2 || dealerCards[0].rank !== 'A') {
+            return NextResponse.json({ error: 'Insurance only available when dealer shows Ace' }, { status: 400 })
+          }
+          if (game.hasInsurance) {
+            return NextResponse.json({ error: 'Insurance already taken' }, { status: 400 })
+          }
+          
+          const insuranceBet = Math.floor(betAmount / 2)
+          if (user.balance < insuranceBet) {
+            return NextResponse.json({ error: 'Insufficient balance for insurance' }, { status: 400 })
+          }
+          
+          updatedGame.insuranceBet = insuranceBet
+          updatedGame.hasInsurance = true
+          
+          // Deduct insurance bet atomically
+          await db.user.update({
+            where: { id: userId },
+            data: { balance: { decrement: insuranceBet } }
           })
-        }
-        // For single hand, cards stay same but value recalculated automatically
-        break
+          break
 
-      default:
-        return NextResponse.json(
-          { error: 'Invalid action' },
-          { status: 400 }
-        )
+        case 'surrender':
+          if (playerCards.length !== 2) {
+            return NextResponse.json({ error: 'Can only surrender with 2 cards' }, { status: 400 })
+          }
+          if (game.hasSurrendered) {
+            return NextResponse.json({ error: 'Cannot surrender after already surrendered' }, { status: 400 })
+          }
+          updatedGame.hasSurrendered = true
+          finalGameState = 'ENDED'
+          result = 'SURRENDER'
+          payout = Math.floor(betAmount / 2)
+          netProfit = payout - betAmount
+          break
+
+        case 'set_ace_value':
+          // Safe fallback - treat as hit
+          const aceCard = deck.pop()
+          if (!aceCard) throw new Error('No cards left in deck')
+          playerCards.push(aceCard)
+          break
+
+        default:
+          return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+      }
+    } catch (error) {
+      console.error('Action processing error:', error)
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Action failed' }, { status: 400 })
     }
 
-    // Calculate new hands
+    // Calculate final hands
     const newPlayerHand = GameEngine.calculateHandValue(playerCards)
     const newDealerHand = GameEngine.calculateHandValue(dealerCards)
 
-    const currentBet = Number.isFinite(Number(updatedGame.currentBet)) ? Number(updatedGame.currentBet) : 0
-
+    // Determine if game should settle
     const shouldSettle =
       updatedGame.hasSurrendered ||
       action === 'stand' ||
-      action === 'split_stand' ||
       action === 'double_down' ||
-      newPlayerHand.isBust ||
-      splitHands.some((hand: any) => hand.isBust)
+      newPlayerHand.isBust
 
+    // Settlement logic
     if (shouldSettle) {
       finalGameState = 'ENDED'
 
       if (updatedGame.hasSurrendered) {
         result = 'SURRENDER'
-      } else if (newPlayerHand.isBust || splitHands.some((hand: any) => hand.isBust)) {
+      } else if (newPlayerHand.isBust) {
         result = 'LOSE'
       } else if (newDealerHand.isBust) {
         result = 'WIN'
@@ -488,23 +297,20 @@ export async function POST(request: NextRequest) {
       } else {
         result = 'PUSH'
       }
-    }
 
-    const isSettlement = finalGameState === 'ENDED'
-
-    if (isSettlement) {
+      // Calculate payout
       switch (result) {
         case 'WIN':
-          payout = currentBet * 2
+          payout = betAmount * 2
           break
         case 'BLACKJACK':
-          payout = Math.floor(currentBet * 2.5)
+          payout = Math.floor(betAmount * 2.5)
           break
         case 'PUSH':
-          payout = currentBet
+          payout = betAmount
           break
         case 'SURRENDER':
-          payout = Math.floor(currentBet / 2)
+          payout = Math.floor(betAmount / 2)
           break
         case 'LOSE':
         default:
@@ -512,41 +318,38 @@ export async function POST(request: NextRequest) {
           break
       }
 
+      // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
         payout = 0
       }
 
-      netProfit = payout - currentBet
+      netProfit = payout - betAmount
       if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
         netProfit = 0
       }
-    } else {
-      netProfit = 0
     }
 
-    // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
+    const isSettlement = finalGameState === 'ENDED'
+
+    // 🚀 PARALLEL: Update game and user balance atomically
     const [updatedGameRecord, updatedUser] = await executeParallel(
       db.game.update({
         where: { id: gameId },
         data: {
           playerHand: newPlayerHand as any,
-          splitHands: splitHands.length > 0 ? (splitHands as any) : undefined,
           dealerHand: newDealerHand as any,
           deck: deck as any,
           currentBet: updatedGame.currentBet,
           insuranceBet: updatedGame.insuranceBet,
           state: finalGameState as any,
-          hasSplit: updatedGame.hasSplit,
           hasSurrendered: updatedGame.hasSurrendered,
           hasInsurance: updatedGame.hasInsurance,
-          ...(isSettlement
-            ? {
-                result: result as any,
-                netProfit,
-                winAmount: payout,
-                endedAt: new Date(),
-              }
-            : {}),
+          ...(isSettlement ? {
+            result: result as any,
+            netProfit,
+            winAmount: payout,
+            endedAt: new Date(),
+          } : {}),
         },
       }),
       isSettlement
@@ -561,30 +364,31 @@ export async function POST(request: NextRequest) {
     const newBalance = isSettlement && updatedUser ? updatedUser.balance : user.balance
     const balanceBefore = user.balance
 
-    // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
+    // 🚀 SMART CACHE INVALIDATION
     if (isSettlement) {
       await cacheInvalidation.invalidateOnGameEnd(gameId, userId, result || 'ENDED')
     } else {
       await cacheInvalidation.invalidateGameData(gameId, userId, 'game_action')
     }
 
-    // 🚀 FIRE-AND-FORGET: Non-critical records (move, transaction, session stats)
+    // 🚀 FIRE-AND-FORGET: Game move logging (preserves originalAction)
     db.gameMove.create({
       data: {
         gameId,
-        moveType: action.toUpperCase(),
+        moveType: translateLegacyAction(action),
         payload: {
           playerCards,
-          splitHands,
-          dealerCards: isSettlement ? dealerCards : [dealerCards[0]],
+          dealerCards: isSettlement ? dealerCards : [dealerCards[0]], // Hide dealer's hole card
           playerHandValue: newPlayerHand.value,
           dealerHandValue: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           currentBet: updatedGame.currentBet,
-          aceValue: payload?.aceValue
+          insuranceBet: updatedGame.insuranceBet,
+          originalAction: action // Preserve original action for debugging
         }
       }
     }).catch(err => console.error('GameMove creation failed:', err))
 
+    // 🚀 FIRE-AND-FORGET: Transaction history (only on settlement)
     if (isSettlement) {
       db.transaction.create({
         data: {
@@ -595,16 +399,17 @@ export async function POST(request: NextRequest) {
           balanceBefore,
           balanceAfter: newBalance,
           referenceId: gameId,
-          description: `Game ${result}: ${updatedGame.currentBet} GBC bet`,
+          description: `Game ${result}: ${betAmount} GBC bet`,
         }
       }).catch(err => console.error('Transaction creation failed:', err))
 
+      // 🚀 FIRE-AND-FORGET: Session stats update
       if (game.sessionId) {
-        updateSessionStatsAction(db, game.sessionId, { result: result || 'LOSE' }, updatedGame.currentBet, netProfit)
+        updateSessionStatsAction(db, game.sessionId, { result: result || 'LOSE' }, betAmount, netProfit)
       }
     }
 
-    // Return updated game state
+    // Return comprehensive response
     return NextResponse.json({
       success: true,
       game: {
@@ -617,10 +422,9 @@ export async function POST(request: NextRequest) {
           ...newPlayerHand,
           cards: newPlayerHand.cards
         },
-        splitHands: splitHands.length > 0 ? splitHands : undefined,
         dealerHand: {
-          cards: finalGameState === 'ENDED' ? newDealerHand.cards : [dealerCards[0]], // Hide second card if game not ended
-          value: finalGameState === 'ENDED' ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
+          cards: isSettlement ? newDealerHand.cards : [dealerCards[0]], // Hide second card if ongoing
+          value: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           isBust: newDealerHand.isBust,
           isBlackjack: newDealerHand.isBlackjack
         },
@@ -632,24 +436,20 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     }, {
       headers: {
-        ...cors.headers,
-        ...getSecurityHeadersFn(),
-        ...rateLimit.headers
+        ...(isDevelopment ? {} : corsMiddleware(request).headers),
+        ...getSecurityHeaders()
       }
     })
 
   } catch (error) {
     console.error('Game action error:', error)
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      {
-        status: 500,
-        headers: getSecurityHeadersFn()
-      }
-    )
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, {
+      status: 500,
+      headers: getSecurityHeaders()
+    })
   } finally {
     perfMetrics.end(perfLabel)
   }
