@@ -292,11 +292,13 @@ export const setupSocket = (io: Server) => {
         
         // Check if game ended
         const playerBust = newPlayerHand.isBust;
-        
+        let winAmount = 0; // Initialize winAmount for balance calculation
+
         if (playerBust) {
           finalGameState = 'ENDED';
           result = 'LOSE';
           netProfit = -game.currentBet;
+          winAmount = 0; // Lose = no payout (bet already deducted at start)
         } else if (data.action === 'stand' || (data.action === 'double_down' && !newPlayerHand.isBust)) {
           finalGameState = 'ENDED';
           
@@ -320,7 +322,10 @@ export const setupSocket = (io: Server) => {
             false
           );
           result = gameResult.result.toUpperCase();
+          // Calculate netProfit for stats/history only - NOT for balance update
           netProfit = gameResult.winAmount - game.currentBet;
+          // winAmount already contains full payout from calculateGameResult
+          winAmount = gameResult.winAmount;
         }
         
         // 🚀 Prepare serializable hand objects
@@ -340,8 +345,10 @@ export const setupSocket = (io: Server) => {
           isSplittable: false
         };
         
-        // 🚀 Calculate new balance
-        const newBalance = finalGameState === 'ENDED' ? user.balance + netProfit : user.balance;
+        // 🚀 Calculate new balance - use winAmount (full payout), NOT netProfit
+        // winAmount already contains full payout: 0 (lose), 1x (push), 2x (win), 2.5x (blackjack)
+        // The bet was already deducted at game start, so we ONLY add the payout
+        const newBalance = finalGameState === 'ENDED' ? user.balance + winAmount : user.balance;
         
         // 🚀 PARALLEL: Update game and balance simultaneously (critical)
         await Promise.all([
@@ -354,6 +361,7 @@ export const setupSocket = (io: Server) => {
               currentBet: game.currentBet,
               state: finalGameState,
               result: result as any,
+              winAmount: finalGameState === 'ENDED' ? winAmount : null,
               netProfit,
               endedAt: finalGameState === 'ENDED' ? new Date() : null
             }
