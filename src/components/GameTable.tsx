@@ -574,25 +574,21 @@ const GameTable: React.FC = memo(() => {
     if (currentGame && currentGame.state === 'ENDED' && currentGame.result) {
       // Create unique key for this game result to prevent replaying sound
       const resultKey = `${currentGame.id}-${currentGame.result}`
-      
+
       // Only proceed if we haven't played sound for this result yet
       if (lastPlayedResultSound === resultKey) {
         return // Already played sound for this result
       }
-      
+
       // Start revealing dealer cards
       setIsRevealingDealerCards(true)
-      
-      // Update balance based on game result via WebSocket
-      const netProfit = currentGame.netProfit ?? 0
-      if (netProfit !== 0) {
-        if (netProfit > 0) {
-          socketManager.updateBalance(netProfit, 'win')
-        } else {
-          socketManager.updateBalance(Math.abs(netProfit), 'lose')
-        }
-      }
-      
+
+      // Backend already handled all balance updates (deduction on start, winnings on end)
+      // Redux gameSlice already updated userBalance from API response
+      // Frontend should ONLY DISPLAY, never re-compute or re-update balance via Socket
+      // Optional: fetch fresh balance for extra safety (defensive only, not required)
+      fetchGameBalanceImmediate?.()
+
       // Play result sound based on outcome (ONLY ONCE!)
       const result = String(currentGame.result).toLowerCase()
       setTimeout(() => {
@@ -608,7 +604,7 @@ const GameTable: React.FC = memo(() => {
         // Mark this result as played
         setLastPlayedResultSound(resultKey)
       }, 600) // Play after dealer card reveal starts
-      
+
       // Show result modal after all cards are revealed
       const totalRevealTime = 600 + (currentGame.dealerHand.cards.length * 400) + 800 // Start delay + card reveals + buffer
       setTimeout(() => {
@@ -616,7 +612,7 @@ const GameTable: React.FC = memo(() => {
         setIsRevealingDealerCards(false)
       }, totalRevealTime)
     }
-  }, [currentGame, socketManager, audio, lastPlayedResultSound])
+  }, [currentGame, audio, lastPlayedResultSound, fetchGameBalanceImmediate])
 
   // Memoized calculations
   const canDoubleDown = useMemo(() => {
