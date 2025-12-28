@@ -170,12 +170,10 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // 🚀 ULTRA-OPTIMIZED: Real-time game action handler
     socket.on('game:action', async (data: GameActionRequest) => {
       const startTime = Date.now();
-      
+
       try {
-        // 🚀 SKIP rate limiting in development for speed
         const isDev = process.env.NODE_ENV === 'development';
         if (!isDev) {
           const rateLimit = await checkRateLimit(`game:${data.userId}`, 30, 60);
@@ -184,9 +182,7 @@ export const setupSocket = (io: Server) => {
             return;
           }
         }
-        
-        // 🚀 SKIP cache completely - direct DB query is faster with proper indexes
-        // Cache adds latency and complexity for real-time actions
+
         const [game, user] = await Promise.all([
           db.game.findUnique({
             where: { id: data.gameId },
@@ -208,8 +204,7 @@ export const setupSocket = (io: Server) => {
             select: { id: true, balance: true }
           })
         ]);
-        
-        // 🚀 Fast validation
+
         if (!game || !user) {
           socket.emit('game:error', { error: 'Game or user not found' });
           return;
@@ -222,17 +217,18 @@ export const setupSocket = (io: Server) => {
           socket.emit('game:error', { error: 'Game not in playing state' });
           return;
         }
-        
-        // Process action (in-memory, fast)
+
         let playerCards = [...(game.playerHand as any).cards];
         let dealerCards = [...(game.dealerHand as any).cards];
-        let deck = [...game.deck as any[]];
-        let finalGameState: 'PLAYING' | 'ENDED' | 'SURRENDERED' | 'BETTING' | 'DEALER' | 'INSURANCE' | 'SPLIT_PLAYING' = game.state as any;
+        let deck = [...(game.deck as any[])];
+        let finalGameState = game.state;
         let result: string | null = null;
         let netProfit = 0;
-        
+        let winAmount = 0;
+        let currentBet = game.currentBet;
+
         switch (data.action) {
-          case 'hit':
+          case 'hit': {
             const newCard = deck.pop();
             if (!newCard) {
               socket.emit('game:error', { error: 'No cards left' });
@@ -240,8 +236,9 @@ export const setupSocket = (io: Server) => {
             }
             playerCards.push(newCard);
             break;
-            
-          case 'stand':
+          }
+
+          case 'stand': {
             let dealerHand = GameEngine.calculateHandValue(dealerCards);
             while (dealerHand.value < 17 && deck.length > 0) {
               const card = deck.pop();
@@ -250,32 +247,33 @@ export const setupSocket = (io: Server) => {
               dealerHand = GameEngine.calculateHandValue(dealerCards);
             }
             break;
-            
-          case 'double_down':
+          }
+
+          case 'double_down': {
             if (playerCards.length !== 2) {
               socket.emit('game:error', { error: 'Can only double down with 2 cards' });
               return;
             }
-            if (user.balance < game.currentBet) {
+            if (user.balance < currentBet) {
               socket.emit('game:error', { error: 'Insufficient balance' });
               return;
             }
-            
-            // Deduct additional bet
+
             await db.user.update({
               where: { id: data.userId },
-              data: { balance: user.balance - game.currentBet }
+              data: { balance: user.balance - currentBet }
             });
-            
+
+            user.balance -= currentBet;
+
             const doubleCard = deck.pop();
             if (!doubleCard) {
               socket.emit('game:error', { error: 'No cards left' });
               return;
             }
             playerCards.push(doubleCard);
-            game.currentBet = game.currentBet * 2;
-            
-            // Auto stand after double down
+            currentBet = currentBet * 2;
+
             let ddDealerHand = GameEngine.calculateHandValue(dealerCards);
             while (ddDealerHand.value < 17 && deck.length > 0) {
               const card = deck.pop();
@@ -284,46 +282,46 @@ export const setupSocket = (io: Server) => {
               ddDealerHand = GameEngine.calculateHandValue(dealerCards);
             }
             break;
+          }
         }
-        
-        // Calculate new hands
+
         const newPlayerHand = GameEngine.calculateHandValue(playerCards);
         const newDealerHand = GameEngine.calculateHandValue(dealerCards);
-        
-        // Check if game ended
+
         const playerBust = newPlayerHand.isBust;
-        
+
         if (playerBust) {
           finalGameState = 'ENDED';
           result = 'LOSE';
-          netProfit = -game.currentBet;
+          netProfit = -currentBet;
+          winAmount = 0;
         } else if (data.action === 'stand' || (data.action === 'double_down' && !newPlayerHand.isBust)) {
           finalGameState = 'ENDED';
-          
-          // Ensure isSplittable is defined for calculateGameResult
+
           const playerHandForCalc = {
             ...newPlayerHand,
             isSplittable: newPlayerHand.isSplittable ?? false
           };
-          
+
           const dealerHandForCalc = {
             ...newDealerHand,
             isSplittable: newDealerHand.isSplittable ?? false
           };
-          
+
           const gameResult = calculateGameResult(
             playerHandForCalc as any,
             dealerHandForCalc as any,
-            game.currentBet,
+            currentBet,
             game.insuranceBet || 0,
             newDealerHand.isBlackjack,
             false
           );
+
           result = gameResult.result.toUpperCase();
-          netProfit = gameResult.winAmount - game.currentBet;
+          netProfit = gameResult.winAmount - currentBet;
+          winAmount = gameResult.winAmount;
         }
-        
-        // 🚀 Prepare serializable hand objects
+
         const playerHandJson = {
           cards: newPlayerHand.cards,
           value: newPlayerHand.value,
@@ -331,7 +329,7 @@ export const setupSocket = (io: Server) => {
           isBlackjack: newPlayerHand.isBlackjack,
           isSplittable: newPlayerHand.isSplittable ?? false
         };
-        
+
         const dealerHandJson = {
           cards: newDealerHand.cards,
           value: newDealerHand.value,
@@ -339,11 +337,9 @@ export const setupSocket = (io: Server) => {
           isBlackjack: newDealerHand.isBlackjack,
           isSplittable: false
         };
-        
-        // 🚀 Calculate new balance
-        const newBalance = finalGameState === 'ENDED' ? user.balance + netProfit : user.balance;
-        
-        // 🚀 PARALLEL: Update game and balance simultaneously (critical)
+
+        const newBalance = finalGameState === 'ENDED' ? user.balance + winAmount : user.balance;
+
         await Promise.all([
           db.game.update({
             where: { id: data.gameId },
@@ -351,48 +347,54 @@ export const setupSocket = (io: Server) => {
               playerHand: playerHandJson as any,
               dealerHand: dealerHandJson as any,
               deck: deck as any,
-              currentBet: game.currentBet,
-              state: finalGameState,
+              currentBet,
+              state: finalGameState as any,
               result: result as any,
+              winAmount: finalGameState === 'ENDED' ? winAmount : null,
               netProfit,
               endedAt: finalGameState === 'ENDED' ? new Date() : null
             }
           }),
-          finalGameState === 'ENDED' ? db.user.update({
-            where: { id: data.userId },
-            data: { balance: newBalance }
-          }) : Promise.resolve()
+          finalGameState === 'ENDED'
+            ? db.user.update({
+                where: { id: data.userId },
+                data: { balance: newBalance }
+              })
+            : Promise.resolve()
         ]);
-        
-        // 🚀 FIRE-AND-FORGET: Transaction record (non-critical)
+
         if (finalGameState === 'ENDED') {
-          db.transaction.create({
-            data: {
-              userId: data.userId,
-              type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
-              amount: Math.abs(netProfit).toString(), // Convert to string
-              description: `Game ${result?.toLowerCase()} - Blackjack`,
-              balanceBefore: user.balance,
-              balanceAfter: newBalance,
-              status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
-              referenceId: data.gameId
-            }
-          }).catch(err => logger.error('[SOCKET] Transaction creation failed', err));
+          db.transaction
+            .create({
+              data: {
+                userId: data.userId,
+                type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
+                amount: Math.abs(netProfit).toString(),
+                description: `Game ${result?.toLowerCase()} - Blackjack`,
+                balanceBefore: user.balance,
+                balanceAfter: newBalance,
+                status: 'COMPLETED',
+                referenceId: data.gameId
+              }
+            })
+            .catch((err) => logger.error('[SOCKET] Transaction creation failed', err));
         }
-        
-        // 🚀 Send instant response
+
         socket.emit('game:updated', {
           success: true,
           game: {
             id: game.id,
             playerId: game.playerId,
             betAmount: game.betAmount,
-            currentBet: game.currentBet,
+            currentBet,
             state: finalGameState,
             playerHand: newPlayerHand,
             dealerHand: {
               cards: finalGameState === 'ENDED' ? newDealerHand.cards : [dealerCards[0]],
-              value: finalGameState === 'ENDED' ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
+              value:
+                finalGameState === 'ENDED'
+                  ? newDealerHand.value
+                  : GameEngine.calculateHandValue([dealerCards[0]]).value,
               isBust: newDealerHand.isBust,
               isBlackjack: newDealerHand.isBlackjack
             },
@@ -404,8 +406,8 @@ export const setupSocket = (io: Server) => {
           processingTime: Date.now() - startTime,
           timestamp: Date.now()
         });
-        
       } catch (error) {
+        logger.error('Game Action Error:', error);
         socket.emit('game:error', {
           error: 'Internal server error',
           details: error instanceof Error ? error.message : 'Unknown error'
