@@ -90,7 +90,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 🛡️ SECURITY CHECK: Prevent double game creation (race condition fix)
+    // 🛡️ SECURITY LAYER 1: TIME-GATE (Prevent race condition from rapid requests)
+    // Check when last game was created to enforce 3-second cooldown
+    const lastGame = await db.game.findFirst({
+      where: { playerId: userId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, createdAt: true, state: true }
+    })
+
+    if (lastGame) {
+      const now = Date.now()
+      const lastGameTime = new Date(lastGame.createdAt).getTime()
+      const timeDiff = now - lastGameTime
+
+      // REJECT if less than 3 seconds (3000ms) have passed
+      // This prevents double-deduction from rapid clicks, network lag, or double-submit
+      if (timeDiff < 3000) {
+        console.log(`🚫 TIME-GATE BLOCKED: User ${userId} request too fast (${timeDiff}ms since last game)`)
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Too fast! Please wait a moment before starting a new game.",
+            game: lastGame, // Return last game so UI can handle gracefully
+            cooldownRemaining: Math.ceil((3000 - timeDiff) / 1000) // Seconds remaining
+          },
+          { status: 429 } // 429 Too Many Requests
+        )
+      }
+    }
+
+    // 🛡️ SECURITY LAYER 2: Active Game Check (Backup protection)
     // Check if user already has an active PLAYING game
     const existingGame = await db.game.findFirst({
       where: {
