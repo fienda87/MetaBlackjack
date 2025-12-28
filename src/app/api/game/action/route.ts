@@ -215,6 +215,7 @@ export async function POST(request: NextRequest) {
   let result: string | null = null
   let netProfit: number = 0
   let finalGameState = 'PLAYING'
+  let payout = 0
 
     // Process action
     switch (action) {
@@ -491,33 +492,31 @@ export async function POST(request: NextRequest) {
 
     const isSettlement = finalGameState === 'ENDED'
 
-    let payoutReturn = 0
-
     if (isSettlement) {
       switch (result) {
         case 'WIN':
-          payoutReturn = currentBet * 2
+          payout = currentBet * 2
           break
         case 'BLACKJACK':
-          payoutReturn = currentBet * 2.5
+          payout = Math.floor(currentBet * 2.5)
           break
         case 'PUSH':
-          payoutReturn = currentBet
+          payout = currentBet
           break
         case 'SURRENDER':
-          payoutReturn = currentBet / 2
+          payout = Math.floor(currentBet / 2)
           break
         case 'LOSE':
         default:
-          payoutReturn = 0
+          payout = 0
           break
       }
 
-      if (!Number.isFinite(payoutReturn) || Number.isNaN(payoutReturn)) {
-        payoutReturn = 0
+      if (!Number.isFinite(payout) || Number.isNaN(payout)) {
+        payout = 0
       }
 
-      netProfit = payoutReturn - currentBet
+      netProfit = payout - currentBet
       if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
         netProfit = 0
       }
@@ -544,7 +543,7 @@ export async function POST(request: NextRequest) {
             ? {
                 result: result as any,
                 netProfit,
-                winAmount: payoutReturn,
+                winAmount: payout,
                 endedAt: new Date(),
               }
             : {}),
@@ -553,7 +552,7 @@ export async function POST(request: NextRequest) {
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: { increment: payoutReturn } },
+            data: { balance: { increment: payout } },
             select: { balance: true },
           })
         : Promise.resolve(null)
