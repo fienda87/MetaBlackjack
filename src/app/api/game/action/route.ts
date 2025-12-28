@@ -12,7 +12,6 @@ const getGameLogic = async () => {
   return {
     GameEngine: (await import('@/domain/usecases/GameEngine')).GameEngine,
     splitHand: gameLogicModule.splitHand,
-    calculateGameResult: gameLogicModule.calculateGameResult,
   }
 }
 
@@ -144,7 +143,7 @@ export async function POST(request: NextRequest) {
 
     // Load dependencies dynamically for game logic
     const [
-      { GameEngine, splitHand, calculateGameResult },
+      { GameEngine, splitHand },
       { executeParallel, USER_SELECT, GAME_SELECT },
       { cacheGetOrFetch, CACHE_STRATEGIES },
       cacheInvalidMod,
@@ -215,7 +214,6 @@ export async function POST(request: NextRequest) {
   // Declare variables that might be used in switch
   let result: string | null = null
   let netProfit: number = 0
-  let payout: number = 0
   let finalGameState = 'PLAYING'
 
     // Process action
@@ -459,38 +457,72 @@ export async function POST(request: NextRequest) {
     const newPlayerHand = GameEngine.calculateHandValue(playerCards)
     const newDealerHand = GameEngine.calculateHandValue(dealerCards)
 
-    if (finalGameState !== 'SURRENDERED') {
-      const playerBust = newPlayerHand.isBust || splitHands.some((hand: any) => hand.isBust)
+    const currentBet = Number.isFinite(Number(updatedGame.currentBet)) ? Number(updatedGame.currentBet) : 0
 
-      if (playerBust) {
-        finalGameState = 'ENDED'
+    const shouldSettle =
+      updatedGame.hasSurrendered ||
+      action === 'stand' ||
+      action === 'split_stand' ||
+      action === 'double_down' ||
+      newPlayerHand.isBust ||
+      splitHands.some((hand: any) => hand.isBust)
+
+    if (shouldSettle) {
+      finalGameState = 'ENDED'
+
+      if (updatedGame.hasSurrendered) {
+        result = 'SURRENDER'
+      } else if (newPlayerHand.isBust || splitHands.some((hand: any) => hand.isBust)) {
         result = 'LOSE'
-        netProfit = -updatedGame.currentBet
-        payout = 0
-      } else if (action === 'stand' || action === 'split_stand' || (action === 'double_down' && !newPlayerHand.isBust)) {
-        finalGameState = 'ENDED'
-
-        const gameResult = calculateGameResult(
-          newPlayerHand as any,
-          newDealerHand as any,
-          updatedGame.currentBet,
-          updatedGame.insuranceBet || 0,
-          newDealerHand.isBlackjack,
-          updatedGame.hasSurrendered || false
-        )
-
-        result = gameResult.result.toUpperCase()
-        payout = gameResult.winAmount
-        netProfit = gameResult.winAmount - updatedGame.currentBet
+      } else if (newDealerHand.isBust) {
+        result = 'WIN'
+      } else if (newPlayerHand.isBlackjack && !newDealerHand.isBlackjack) {
+        result = 'BLACKJACK'
+      } else if (newDealerHand.isBlackjack && !newPlayerHand.isBlackjack) {
+        result = 'LOSE'
+      } else if (newPlayerHand.value > newDealerHand.value) {
+        result = 'WIN'
+      } else if (newPlayerHand.value < newDealerHand.value) {
+        result = 'LOSE'
+      } else {
+        result = 'PUSH'
       }
     }
 
-    const isSettlement = finalGameState === 'ENDED' || finalGameState === 'SURRENDERED'
+    const isSettlement = finalGameState === 'ENDED'
 
-    // 🛡️ SAFEGUARD: Ensure netProfit is valid (not NaN)
-    if (Number.isNaN(netProfit) || netProfit === undefined || netProfit === null) {
-        console.warn('⚠️ NetProfit calculation resulted in NaN. Defaulting to -betAmount.');
-        netProfit = result === 'LOSE' ? -updatedGame.currentBet : 0;
+    let payoutReturn = 0
+
+    if (isSettlement) {
+      switch (result) {
+        case 'WIN':
+          payoutReturn = currentBet * 2
+          break
+        case 'BLACKJACK':
+          payoutReturn = currentBet * 2.5
+          break
+        case 'PUSH':
+          payoutReturn = currentBet
+          break
+        case 'SURRENDER':
+          payoutReturn = currentBet / 2
+          break
+        case 'LOSE':
+        default:
+          payoutReturn = 0
+          break
+      }
+
+      if (!Number.isFinite(payoutReturn) || Number.isNaN(payoutReturn)) {
+        payoutReturn = 0
+      }
+
+      netProfit = payoutReturn - currentBet
+      if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
+        netProfit = 0
+      }
+    } else {
+      netProfit = 0
     }
 
     // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
@@ -505,28 +537,29 @@ export async function POST(request: NextRequest) {
           currentBet: updatedGame.currentBet,
           insuranceBet: updatedGame.insuranceBet,
           state: finalGameState as any,
-          result: result as any,
-          netProfit,
           hasSplit: updatedGame.hasSplit,
           hasSurrendered: updatedGame.hasSurrendered,
           hasInsurance: updatedGame.hasInsurance,
-          endedAt: isSettlement ? new Date() : null
-        }
+          ...(isSettlement
+            ? {
+                result: result as any,
+                netProfit,
+                winAmount: payoutReturn,
+                endedAt: new Date(),
+              }
+            : {}),
+        },
       }),
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: user.balance + netProfit + updatedGame.currentBet },
-            select: { balance: true }
+            data: { balance: { increment: payoutReturn } },
+            select: { balance: true },
           })
         : Promise.resolve(null)
     )
 
-    let newBalance = user.balance
-    if (isSettlement) {
-      // Fix: Add back the bet amount since netProfit already accounts for it
-      newBalance = user.balance + netProfit + updatedGame.currentBet
-    }
+    const newBalance = isSettlement && updatedUser ? updatedUser.balance : user.balance
     const balanceBefore = user.balance
 
     // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
