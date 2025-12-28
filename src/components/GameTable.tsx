@@ -25,7 +25,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { RootState, AppDispatch } from '@/application/providers/store'
-import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/providers/store/gameSlice'
+import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame, setLocalBalance } from '@/application/providers/store/gameSlice'
 import type { GameActionResponse } from '@/application/providers/store/gameSlice'
 import { createCardDisplay, createHiddenCard } from '@/lib/ui-helpers'
 import GameResultModal from '@/components/GameResultModal'
@@ -674,27 +674,41 @@ const GameTable: React.FC = memo(() => {
       _setDealtDealerCards([])
       setLastPlayedResultSound(null) // Reset sound flag for new game
 
-      // Start the game and wait for API response
-      await dispatch(startNewGame({ userId: user.id, betAmount }))
+      try {
+        // ✅ STEP A: AWAIT API and unwrap result
+        const result = await dispatch(startNewGame({ 
+          userId: user.id, 
+          betAmount 
+        })).unwrap();
 
-      // Refresh off-chain balance from database
-      fetchGameBalanceImmediate()
+        console.log("🔥 API Response userBalance:", result?.userBalance);
 
-      // Play card dealing sounds with delay
-      setTimeout(() => audio.playCardDealSound(), 300)
-      setTimeout(() => audio.playCardDealSound(), 600)
-      setTimeout(() => audio.playCardDealSound(), 900)
-      setTimeout(() => audio.playCardDealSound(), 1200)
+        // ✅ STEP B: FORCE UI UPDATE from API response
+        if (result && result.userBalance !== undefined) {
+            console.log("⚡ FORCING UI Balance Update to:", result.userBalance);
+            
+            // This directly updates Redux state & UI component
+            dispatch(setLocalBalance(result.userBalance));
+        }
 
-      setShowDealConfirmation(false)
+        // Play card dealing sounds with delay
+        setTimeout(() => audio.playCardDealSound(), 300)
+        setTimeout(() => audio.playCardDealSound(), 600)
+        setTimeout(() => audio.playCardDealSound(), 900)
+        setTimeout(() => audio.playCardDealSound(), 1200)
+        
+        setShowDealConfirmation(false)
 
-      // Note: In a real implementation, we would wait for the game response
-      // then animate the cards being dealt. For now, we'll simulate it.
-      setTimeout(() => {
+      } catch (error) {
+        console.error("❌ Deal Error:", error);
         setIsDealingCards(false)
-      }, 2000) // Reset dealing state after animation
+      } finally {
+        setTimeout(() => {
+          setIsDealingCards(false)
+        }, 2000) // Reset dealing state after animation
+      }
     }
-  }, [user, betAmount, currentBalance, dispatch, audio, fetchGameBalanceImmediate])
+  }, [user, betAmount, currentBalance, dispatch, audio])
 
   const handleCancelDeal = useCallback(() => {
     setShowDealConfirmation(false)
