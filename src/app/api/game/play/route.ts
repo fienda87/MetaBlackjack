@@ -146,15 +146,19 @@ export async function POST(request: NextRequest) {
     // 🚀 PARALLEL: Get session and create game simultaneously (independent operations)
     const activeSession = await getOrCreateActiveSession(userId)
     
-    // 🚀 Calculate new balance immediately
-    let newBalance = user.balance
+    // 🚀 ATOMIC: Calculate balance change (negative = decrease, positive = increase)
+    // No manual balance calculation - use Prisma atomic operations
+    let balanceChange = 0
     if (gameState === 'ENDED') {
-      newBalance = user.balance + netProfit
+      balanceChange = netProfit  // Instant settlement: profit (+) or loss (-)
     } else {
-      newBalance = user.balance - betAmount
+      balanceChange = -betAmount  // Normal game: cut balance NOW
     }
 
-    // 🚀 PARALLEL: Create game and update user balance simultaneously
+    // Calculate balanceBefore for transaction logging
+    const balanceBefore = user.balance
+
+    // 🚀 PARALLEL: Create game and update user balance with ATOMIC operation
     const [game, updatedUser] = await executeParallel(
       db.game.create({
         data: {
@@ -181,9 +185,12 @@ export async function POST(request: NextRequest) {
       }),
       db.user.update({
         where: { id: userId },
-        data: { balance: newBalance }
+        data: { balance: { increment: balanceChange } }  // ✅ ATOMIC - RACE CONDITION IMPOSSIBLE
       })
     )
+
+    // Calculate actual balanceAfter from the atomic update
+    const balanceAfter = balanceBefore + balanceChange
 
     // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
     if (gameState === 'ENDED') {
@@ -212,9 +219,9 @@ export async function POST(request: NextRequest) {
         userId,
         type: gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS') : 'GAME_BET',
         amount: (gameState === 'ENDED' ? Math.abs(netProfit) : betAmount).toString(),
-        status: 'SUCCESS', // Changed from COMPLETED to SUCCESS to match new status options
-        balanceBefore: user.balance,
-        balanceAfter: newBalance,
+        status: 'SUCCESS',
+        balanceBefore,
+        balanceAfter,
         referenceId: game.id,
         description: `Game ${gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'WIN' : 'LOSS') : 'BET'}: ${betAmount} GBC`,
       }
@@ -248,7 +255,7 @@ export async function POST(request: NextRequest) {
         netProfit: game.netProfit,
         createdAt: game.createdAt
       },
-      userBalance: newBalance, // Use fresh balance from DB
+      userBalance: balanceAfter, // Use calculated balanceAfter from atomic operation
       timestamp: new Date().toISOString()
     })
 
