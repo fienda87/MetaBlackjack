@@ -290,34 +290,54 @@ export async function POST(request: NextRequest) {
         result = 'PUSH'
       }
 
-      // 💰 FIX LOGIKA PAYOUT (MODAL + PROFIT)
+      // 💰 PAYOUT CALC (MODAL + PROFIT)
       // Ingat: Modal (Bet) SUDAH diambil saat Start Game (/play).
       // Jadi kita harus mengembalikan Modal + Profit.
 
-      // 🔧 FIX: Pastikan currentBet dikonversi jadi Number (Float)
-      // Prisma kadang mengembalikan Decimal yang tidak bisa langsung dikali
+      // 1. Ambil Result & Bersihkan Formatnya (Jadi Huruf Besar & Tanpa Spasi)
+      // Ini akan mengubah "Win" -> "WIN", "Push" -> "PUSH", "LOSE" -> "LOSE"
+      const rawResult = result || 'LOSE'
+      const cleanResult = rawResult.toUpperCase().trim()
+
+      console.log(`🔍 RESULT CHECK: Asli='${rawResult}' | Dibaca='${cleanResult}'`)
+
+      // 2. Pastikan Bet adalah Angka (Mencegah Error Decimal Prisma)
       const betValue = Number(updatedGame.currentBet ?? game.currentBet) || 0
       betAmount = betValue
 
       let multiplier = 0
-      if (result === 'BLACKJACK') {
+
+      // --- LOGIK PAYOUT (Sesuai JSON Anda) ---
+      if (cleanResult.includes('BLACKJACK')) {
         multiplier = 2.5
-      } else if (result === 'WIN') {
+      }
+      // KASUS 2: MENANG (WIN) - pakai .includes() jaga-jaga kalau tulisannya "PLAYER_WIN" / "SPLIT_WIN"
+      else if (cleanResult === 'WIN' || cleanResult.includes('WIN')) {
         multiplier = 2.0
-      } else if (result === 'PUSH') {
+      }
+      // KASUS 3: SERI (PUSH)
+      else if (
+        cleanResult === 'PUSH' ||
+        cleanResult === 'DRAW' ||
+        cleanResult === 'TIE' ||
+        cleanResult.includes('PUSH')
+      ) {
         multiplier = 1.0
-      } else if (result === 'SURRENDER') {
+      }
+      // KASUS 4: SURRENDER
+      else if (cleanResult === 'SURRENDER' || cleanResult.includes('SURRENDER')) {
         multiplier = 0.5
-      } else {
+      }
+      // KASUS 5: KALAH (LOSE)
+      else {
         multiplier = 0.0
       }
 
-      // Hitung Payout
+      // 3. Hitung Total Uang yang Kembali ke User
       payout = betValue * multiplier
       balanceChange = payout
 
-      // 🔍 DEBUGGING LOG (Cek ini di Terminal Railway/Local)
-      console.log(`💰 PAYOUT CALC: Bet=${betValue}, Result=${result}, Pay=${payout}`)
+      console.log(`💰 PAYOUT: Status=${cleanResult}, Bet=${betValue}, Pay=${payout}`)
 
       // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
