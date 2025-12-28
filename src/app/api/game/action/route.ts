@@ -487,6 +487,12 @@ export async function POST(request: NextRequest) {
 
     const isSettlement = finalGameState === 'ENDED' || finalGameState === 'SURRENDERED'
 
+    // 🛡️ SAFEGUARD: Ensure netProfit is valid (not NaN)
+    if (Number.isNaN(netProfit) || netProfit === undefined || netProfit === null) {
+        console.warn('⚠️ NetProfit calculation resulted in NaN. Defaulting to -betAmount.');
+        netProfit = result === 'LOSE' ? -updatedGame.currentBet : 0;
+    }
+
     // 🚀 PARALLEL: Update game and user balance simultaneously (critical operations)
     const [updatedGameRecord, updatedUser] = await executeParallel(
       db.game.update({
@@ -510,14 +516,18 @@ export async function POST(request: NextRequest) {
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: { increment: payout } },
+            data: { balance: user.balance + netProfit + updatedGame.currentBet },
             select: { balance: true }
           })
         : Promise.resolve(null)
     )
 
-    const newBalance = isSettlement ? (updatedUser as any)?.balance ?? user.balance : user.balance
-    const balanceBefore = isSettlement ? newBalance - payout : user.balance
+    let newBalance = user.balance
+    if (isSettlement) {
+      // Fix: Add back the bet amount since netProfit already accounts for it
+      newBalance = user.balance + netProfit + updatedGame.currentBet
+    }
+    const balanceBefore = user.balance
 
     // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
     if (isSettlement) {
