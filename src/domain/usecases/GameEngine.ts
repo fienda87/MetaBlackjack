@@ -164,42 +164,10 @@ export class GameEngine {
     return canOfferInsurance(compatibleHand)
   }
 
-  static canSplit(playerHand: Hand): boolean {
-    // Can split if first two cards have the same value
-    if (playerHand.cards.length !== 2) return false
-    
-    const card1 = playerHand.cards[0]
-    const card2 = playerHand.cards[1]
-    
-    if (!card1 || !card2) return false
-    
-    // Same rank cards can split
-    if (card1.rank === card2.rank) return true
-    
-    // Different ranks but same value (10-point cards) can split
-    const tenPointCards = ['10', 'J', 'Q', 'K']
-    if (tenPointCards.includes(card1.rank) && tenPointCards.includes(card2.rank)) return true
-    
-    return false
-  }
-
-  static createSplitHand(playerHand: Hand): Hand[] {
-    if (playerHand.cards.length !== 2) return []
-    
-    const card1 = playerHand.cards[0]
-    const card2 = playerHand.cards[1]
-    
-    if (!card1 || !card2) return []
-    
-    const hand1 = GameEngine.calculateHandValue([card1])
-    const hand2 = GameEngine.calculateHandValue([card2])
-    
-    return [hand1, hand2]
-  }
-
   static calculateInsuranceBet(originalBet: number): number {
     return calculateInsuranceBet(originalBet)
   }
+
   // Game state transitions
   async processMove(gameId: string, move: GameMove): Promise<Game> {
     const game = await this.repository.getGame(gameId)
@@ -226,9 +194,6 @@ export class GameEngine {
         break
       case 'DOUBLE_DOWN':
         updatedGame = this.processDoubleDown(game)
-        break
-      case 'SPLIT':
-        updatedGame = this.processSplit(game)
         break
       case 'INSURANCE_ACCEPT':
         updatedGame = this.processInsuranceAccept(game)
@@ -401,95 +366,5 @@ export class GameEngine {
     }
     
     return currentHand
-  }
-
-  private processSplit(game: Game): Game {
-    if (!GameEngine.canSplit(game.playerHand)) {
-      throw new Error('Cannot split this hand')
-    }
-
-    const splitHands = GameEngine.createSplitHand(game.playerHand)
-    
-    return {
-      ...game,
-      playerHand: { cards: [], value: 0, isBust: false, isBlackjack: false }, // Clear main hand
-      splitHands,
-      splitBet: game.betAmount, // Additional bet equal to original
-      currentBet: game.betAmount * 2, // Total bet is now doubled
-      state: 'PLAYING'
-    }
-  }
-
-  private processSplitHit(game: Game, handIndex: number): Game {
-    if (!game.splitHands || handIndex >= game.splitHands.length) {
-      throw new Error('Invalid split hand index')
-    }
-
-    const deck = [...game.deck]
-    const newCard = deck.pop()!
-    const currentHand = game.splitHands?.[handIndex]
-    if (!currentHand) throw new Error('Invalid split hand index')
-    const updatedHand = GameEngine.calculateHandValue([...currentHand.cards, newCard])
-    
-    const updatedSplitHands = [...(game.splitHands || [])]
-    updatedSplitHands[handIndex] = updatedHand
-
-    // Check if all hands are done (bust or stand)
-    const allHandsDone = updatedSplitHands.every(hand => hand.isBust || hand.value >= 21)
-    
-    return {
-      ...game,
-      deck,
-      splitHands: updatedSplitHands,
-      state: allHandsDone ? 'DEALER' : 'PLAYING'
-    }
-  }
-
-  private processSplitStand(game: Game, handIndex: number): Game {
-    if (!game.splitHands || handIndex >= game.splitHands.length) {
-      throw new Error('Invalid split hand index')
-    }
-
-    // Mark this hand as standing (we'll use a property to track this)
-    const updatedSplitHands = [...game.splitHands]
-    
-    // Check if all hands are done (bust or stand)
-    const allHandsDone = updatedSplitHands.every(hand => hand.isBust || hand.value >= 21)
-    
-    return {
-      ...game,
-      splitHands: updatedSplitHands,
-      state: allHandsDone ? 'DEALER' : 'PLAYING'
-    }
-  }
-
-  private processSetAceValue(game: Game, aceValue: number): Game {
-    if (aceValue !== 1 && aceValue !== 11) {
-      throw new Error('Ace value must be 1 or 11')
-    }
-
-    // Update main hand or split hands
-    if (game.splitHands && game.splitHands.length > 0) {
-      // Update all split hands with ace
-      const updatedSplitHands = game.splitHands.map(hand => {
-        if (GameEngine.canChooseAceValue(hand)) {
-          return GameEngine.calculateHandValue(hand.cards, aceValue)
-        }
-        return hand
-      })
-      
-      return {
-        ...game,
-        splitHands: updatedSplitHands
-      }
-    } else {
-      // Update main hand
-      const updatedHand = GameEngine.calculateHandValue(game.playerHand.cards, aceValue)
-      
-      return {
-        ...game,
-        playerHand: updatedHand
-      }
-    }
   }
 }

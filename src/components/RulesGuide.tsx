@@ -122,7 +122,7 @@ export default function RulesGuide() {
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-green-400">Player Actions</h3>
             <p className="text-green-300 leading-relaxed">
-              As a player, you have several strategic options available during your turn. Each action should be 
+              As a player, you have several strategic options available during your turn. Each action should be
               chosen based on your hand value and the dealer's visible card.
             </p>
             <div className="space-y-4 mt-6">
@@ -137,7 +137,7 @@ export default function RulesGuide() {
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-green-900/20 border-green-800/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3 mb-2">
@@ -149,7 +149,7 @@ export default function RulesGuide() {
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-green-900/20 border-green-800/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3 mb-2">
@@ -161,15 +161,27 @@ export default function RulesGuide() {
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-green-900/20 border-green-800/50">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-purple-600 text-white">Split</Badge>
-                    <span className="text-green-400 font-semibold">Split pairs into two hands</span>
+                    <Badge className="bg-purple-600 text-white">Insurance</Badge>
+                    <span className="text-green-400 font-semibold">Protect against dealer blackjack</span>
                   </div>
                   <p className="text-green-300 text-sm">
-                    When first two cards have same value. Requires additional bet equal to original.
+                    Available when dealer shows Ace. Costs half your bet and pays 2:1 if dealer has blackjack.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-green-900/20 border-green-800/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-gray-600 text-white">Surrender</Badge>
+                    <span className="text-green-400 font-semibold">Forfeit hand and keep half bet</span>
+                  </div>
+                  <p className="text-green-300 text-sm">
+                    Use only with your first two cards when dealer shows strong cards. Get half your bet back.
                   </p>
                 </CardContent>
               </Card>
@@ -366,28 +378,6 @@ export default function RulesGuide() {
                 </CardContent>
               </Card>
             </div>
-            
-            <Card className="bg-green-900/20 border-green-800/50 mt-4">
-              <CardContent className="p-4">
-                <h4 className="font-semibold text-green-400 mb-3">Pair Splitting Rules</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-green-300 font-semibold mb-2">Always Split:</p>
-                    <ul className="text-green-300 space-y-1">
-                      <li>• Aces</li>
-                      <li>• 8s</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-green-300 font-semibold mb-2">Never Split:</p>
-                    <ul className="text-green-300 space-y-1">
-                      <li>• 10s, Jacks, Queens, Kings</li>
-                      <li>• 5s (Double instead)</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )
 

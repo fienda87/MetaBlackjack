@@ -3,19 +3,17 @@ export interface Game {
   playerId: string
   state: GameState
   playerHand: Hand
-  splitHands?: Hand[] // For split functionality
   dealerHand: Hand
   betAmount: number
   insuranceBet: number
   currentBet: number
-  splitBet?: number // Additional bet for split
   deck: Card[]
   gameStats: GameStats
   result?: GameResult
   winAmount?: number
   insuranceWin?: number
   netProfit?: number
-  hasSplit?: boolean
+  hasSplit?: boolean // Kept for backward compatibility with existing database records
   hasSurrendered?: boolean
   hasInsurance?: boolean
   createdAt: Date
@@ -29,10 +27,10 @@ export interface Hand {
   isBust: boolean
   isBlackjack: boolean
   aceValue?: number // Track current ace value selection (1 or 11)
-  isSplittable?: boolean
+  isSplittable?: boolean // Kept for backward compatibility
   canSurrender?: boolean
-  hasSplit?: boolean
-  originalBet?: number
+  hasSplit?: boolean // Kept for backward compatibility with existing database records
+  originalBet?: number // Kept for backward compatibility with existing database records
 }
 
 export interface Card {
@@ -48,13 +46,13 @@ export interface GameStats {
   blackjacks: number
 }
 
-export type GameState = 'BETTING' | 'PLAYING' | 'DEALER' | 'ENDED' | 'INSURANCE' | 'SPLIT_PLAYING' | 'SURRENDERED'
+export type GameState = 'BETTING' | 'PLAYING' | 'DEALER' | 'ENDED' | 'INSURANCE' | 'SURRENDERED'
 
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades'
 export type Rank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K'
 
 export interface GameResult {
-  result: 'WIN' | 'LOSE' | 'PUSH' | 'BLACKJACK' | 'BONUS_WIN' | 'SURRENDER' | 'SPLIT_WIN' | 'SPLIT_LOSE' | 'SPLIT_PUSH'
+  result: 'WIN' | 'LOSE' | 'PUSH' | 'BLACKJACK' | 'BONUS_WIN' | 'SURRENDER'
   winAmount: number
   insuranceWin?: number
   netProfit: number
@@ -66,6 +64,6 @@ export interface GameResult {
 }
 
 export interface GameMove {
-  type: 'HIT' | 'STAND' | 'DOUBLE_DOWN' | 'DEAL' | 'INSURANCE_ACCEPT' | 'INSURANCE_DECLINE' | 'SPLIT' | 'SURRENDER'
+  type: 'HIT' | 'STAND' | 'DOUBLE_DOWN' | 'DEAL' | 'INSURANCE_ACCEPT' | 'INSURANCE_DECLINE' | 'SURRENDER'
   payload?: any
 }
