@@ -33,26 +33,26 @@ export const getCardValue = (rank: Rank): number => {
 export const calculateHandValue = (cards: Card[], hasSplit: boolean = false): Hand => {
   let value = 0
   let aces = 0
-  
+
   for (const card of cards) {
     if (card.rank === 'A') aces++
     value += card.value
   }
-  
+
   // Adjust for aces
   while (value > 21 && aces > 0) {
     value -= 10
     aces--
   }
-  
+
   // Check if hand can be split (first two cards same rank)
-  const isSplittable = cards.length === 2 && 
-                      cards[0]?.rank === cards[1]?.rank && 
+  const isSplittable = cards.length === 2 &&
+                      cards[0]?.rank === cards[1]?.rank &&
                       !hasSplit
-  
+
   // Check if surrender is allowed (first two cards only, not after split)
   const canSurrender = cards.length === 2 && !hasSplit
-  
+
   return {
     cards,
     value,
@@ -290,27 +290,6 @@ export const canOfferInsurance = (dealerHand: Hand): boolean => {
 // Calculate insurance bet (typically half of original bet)
 export const calculateInsuranceBet = (originalBet: number): number => {
   return Math.floor(originalBet / 2)
-}
-
-// Split hand into two separate hands
-export const splitHand = (hand: Hand): { hand1: Hand; hand2: Hand } => {
-  if (!hand.isSplittable) {
-    throw new Error('Hand cannot be split')
-  }
-  
-  const card1 = hand.cards[0]
-  const card2 = hand.cards[1]
-  
-  if (!card1 || !card2) return { hand1: hand, hand2: hand }
-  
-  const hand1 = calculateHandValue([card1], true)
-  const hand2 = calculateHandValue([card2], true)
-  
-  // Set original bet for both hands
-  hand1.originalBet = hand.originalBet
-  hand2.originalBet = hand.originalBet
-  
-  return { hand1, hand2 }
 }
 
 // Calculate surrender payout (return half of bet)

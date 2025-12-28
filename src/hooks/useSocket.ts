@@ -161,7 +161,7 @@ export const useSocket = (playerId: string, initialBalance: number) => {
   // Real-time game action (NEW - FAST!)
   const performGameAction = (
     gameId: string,
-    action: 'hit' | 'stand' | 'double_down' | 'split' | 'insurance' | 'surrender',
+    action: 'hit' | 'stand' | 'double_down' | 'insurance' | 'surrender',
     payload?: any
   ): Promise<any> => {
     return new Promise((resolve, reject) => {

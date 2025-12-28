@@ -287,15 +287,13 @@ BettingControls.displayName = 'BettingControls'
 
 // Playing controls component
 const PlayingControls = memo(({ 
-  onHit, 
-  onStand, 
-  onDoubleDown, 
-  onInsurance, 
-  onSplit, 
+  onHit,
+  onStand,
+  onDoubleDown,
+  onInsurance,
   onSurrender,
-  canDoubleDown, 
-  canInsurance, 
-  canSplit, 
+  canDoubleDown,
+  canInsurance,
   canSurrender,
   isLoading 
 }: {
@@ -303,11 +301,9 @@ const PlayingControls = memo(({
   onStand: () => void
   onDoubleDown: () => void
   onInsurance: () => void
-  onSplit: () => void
   onSurrender: () => void
   canDoubleDown: boolean
   canInsurance: boolean
-  canSplit: boolean
   canSurrender: boolean
   isLoading: boolean
 }) => {
@@ -339,9 +335,9 @@ const PlayingControls = memo(({
           </Button>
         )}
       </div>
-      
+
       {/* Secondary actions */}
-      {(canInsurance || canSplit || canSurrender) && (
+      {(canInsurance || canSurrender) && (
         <div className="flex gap-2 justify-center flex-wrap">
           {canInsurance && (
             <Button
@@ -350,15 +346,6 @@ const PlayingControls = memo(({
               disabled={isLoading}
             >
               Insurance
-            </Button>
-          )}
-          {canSplit && (
-            <Button
-              onClick={onSplit}
-              className="bg-orange-600 text-white hover:bg-orange-500 font-bold px-3 py-1 text-xs"
-              disabled={isLoading}
-            >
-              Split
             </Button>
           )}
           {canSurrender && (
@@ -633,28 +620,20 @@ const GameTable: React.FC = memo(() => {
            currentBalance >= Math.floor(currentGame.currentBet / 2)
   }, [currentGame, currentBalance])
 
-  const canSplit = useMemo(() => {
-    return currentGame?.state === 'PLAYING' && 
-           currentGame.playerHand?.cards?.length === 2 &&
-           currentGame.playerHand?.cards?.[0]?.rank === currentGame.playerHand?.cards?.[1]?.rank &&
-           !currentGame.hasSplit &&
-           currentBalance >= currentGame.currentBet
-  }, [currentGame, currentBalance])
-
   const canSurrender = useMemo(() => {
     if (!currentGame || currentGame.state !== 'PLAYING') return false
     if (currentGame.playerHand.cards.length !== 2) return false
-    if (currentGame.hasSplit || currentGame.hasSurrendered) return false
+    if (currentGame.hasSurrendered) return false
     if (!currentGame.dealerHand.cards[0]) return false
-    
+
     // Convert to compatible Hand type by ensuring all required properties
     const compatibleHand = {
       ...currentGame.playerHand,
       isSplittable: currentGame.playerHand.isSplittable ?? false,
       canSurrender: currentGame.playerHand.canSurrender ?? false,
-      hasSplit: currentGame.playerHand.hasSplit ?? false
+      hasSplit: false
     }
-    
+
     return shouldSurrender(compatibleHand, currentGame.dealerHand.cards[0])
   }, [currentGame])
 
@@ -935,55 +914,6 @@ const GameTable: React.FC = memo(() => {
     }
   }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
 
-  const handleSplit = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot split: Game not in PLAYING state')
-      return
-    }
-    
-    // Split only valid with 2 cards of same rank
-    if (currentGame.playerHand.cards.length !== 2) {
-      console.warn('[GameTable] Cannot split: Must have exactly 2 cards')
-      return
-    }
-    
-    const [card1, card2] = currentGame.playerHand.cards
-    if (!card1 || !card2 || card1.rank !== card2.rank) {
-      console.warn('[GameTable] Cannot split: Cards must be same rank')
-      return
-    }
-
-    try {
-      const result = await socketManager.performGameAction(
-        currentGame.id, 
-        'split'
-      )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
-    } catch (error) {
-      console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      const httpResult = await dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'split', 
-        userId: user.id 
-      }))
-      
-      // ✅ Extract and update balance from HTTP response
-      if (isGameActionResponse(httpResult?.payload)) {
-        const payload = httpResult.payload
-        console.log('[GameTable] Balance updated via HTTP:', {
-          newBalance: payload.userBalance,
-          action: 'split',
-          gameId: currentGame.id
-        })
-        // Immediately refresh balance from database to ensure UI sync
-        fetchGameBalanceImmediate()
-      }
-    }
-  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
-
   const handleSurrender = useCallback(async () => {
     if (!currentGame || !user) return
     
@@ -1217,11 +1147,9 @@ const GameTable: React.FC = memo(() => {
                 onStand={handleStand}
                 onDoubleDown={handleDoubleDown}
                 onInsurance={handleInsurance}
-                onSplit={handleSplit}
                 onSurrender={handleSurrender}
                 canDoubleDown={canDoubleDown}
                 canInsurance={canInsurance}
-                canSplit={canSplit}
                 canSurrender={canSurrender}
                 isLoading={isLoading}
               />

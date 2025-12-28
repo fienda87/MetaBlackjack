@@ -176,7 +176,6 @@ export class PrismaGameRepository implements IGameRepository {
       'DEALER': 'DEALER',
       'ENDED': 'ENDED',
       'INSURANCE': 'INSURANCE',
-      'SPLIT_PLAYING': 'SPLIT_PLAYING',
       'SURRENDERED': 'SURRENDERED'
     }
     return stateMap[state] || 'BETTING'
@@ -189,10 +188,7 @@ export class PrismaGameRepository implements IGameRepository {
       'PUSH': 'PUSH',
       'BLACKJACK': 'BLACKJACK',
       'BONUS_WIN': 'BONUS_WIN',
-      'SURRENDER': 'SURRENDER',
-      'SPLIT_WIN': 'SPLIT_WIN',
-      'SPLIT_LOSE': 'SPLIT_LOSE',
-      'SPLIT_PUSH': 'SPLIT_PUSH'
+      'SURRENDER': 'SURRENDER'
     }
     return resultMap[result] || null
   }
@@ -205,7 +201,6 @@ export class PrismaGameRepository implements IGameRepository {
       'DEAL': 'DEAL',
       'INSURANCE_ACCEPT': 'INSURANCE_ACCEPT',
       'INSURANCE_DECLINE': 'INSURANCE_DECLINE',
-      'SPLIT': 'SPLIT',
       'SURRENDER': 'SURRENDER'
     }
     return moveMap[moveType] || 'HIT'
@@ -239,7 +234,6 @@ export class PrismaGameRepository implements IGameRepository {
       'DEALER': 'DEALER',
       'ENDED': 'ENDED',
       'INSURANCE': 'INSURANCE',
-      'SPLIT_PLAYING': 'SPLIT_PLAYING',
       'SURRENDERED': 'SURRENDERED'
     }
     return stateMap[state] || 'BETTING'
@@ -252,10 +246,7 @@ export class PrismaGameRepository implements IGameRepository {
       'PUSH': 'PUSH',
       'BLACKJACK': 'BLACKJACK',
       'BONUS_WIN': 'BONUS_WIN',
-      'SURRENDER': 'SURRENDER',
-      'SPLIT_WIN': 'SPLIT_WIN',
-      'SPLIT_LOSE': 'SPLIT_LOSE',
-      'SPLIT_PUSH': 'SPLIT_PUSH'
+      'SURRENDER': 'SURRENDER'
     }
     return resultMap[result] || 'PUSH'
   }
