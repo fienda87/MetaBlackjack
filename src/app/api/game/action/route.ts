@@ -139,6 +139,7 @@ export async function POST(request: NextRequest) {
     let netProfit = 0
     let finalGameState = 'PLAYING'
     let payout = 0
+    let balanceChange = 0
     let betAmount = Number(game.currentBet) || 0
 
     try {
@@ -294,7 +295,6 @@ export async function POST(request: NextRequest) {
       // Jadi kita harus mengembalikan Modal + Profit.
 
       let multiplier = 0;
-      let balanceChange = 0;
 
       if (result === 'BLACKJACK') {
         multiplier = 2.5; // (Contoh: Bet 10 -> Terima 25) -> Profit bersih 15
