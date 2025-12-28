@@ -466,24 +466,17 @@ const GameTable: React.FC = memo(() => {
   
   // Audio system
   const audio = useAudio()
-  
+
   // Use real off-chain game balance for betting
   const currentBalance = useMemo(() => {
-    // Prioritize real off-chain game balance from database
-    if (isConnected && address) {
-      console.log('🎮 Using off-chain game balance:', {
-        address,
-        gameBalance: offChainGBC,
-        formatted: `${offChainGBC.toFixed(2)} GBC`
-      })
-      return offChainGBC
+    // 1. During gameplay, trust Socket/Redux (Fastest, Authoritative for Session)
+    if (currentGame?.state === 'PLAYING') {
+      return balance
     }
-    
-    // Fallback to Redux balance (for non-blockchain users or during loading)
-    const fallbackBalance = user?.balance ?? balance
-    console.log('💰 Using fallback balance:', fallbackBalance)
-    return fallbackBalance
-  }, [offChainGBC, user?.balance, balance, isConnected, address])
+
+    // 2. Only during idle time, trust the Database (Consistency)
+    return offChainGBC ?? balance
+  }, [balance, offChainGBC, currentGame?.state])
 
   // Sync balance with WebSocket and refresh game balance
   useEffect(() => {
@@ -557,7 +550,13 @@ const GameTable: React.FC = memo(() => {
   const [dealtPlayerCards, setDealtPlayerCards] = useState<any[]>([])
   const [_dealtDealerCards, _setDealtDealerCards] = useState<any[]>([])
   const [lastPlayedResultSound, setLastPlayedResultSound] = useState<string | null>(null)
-  
+
+  const gameRef = React.useRef(currentGame)
+
+  useEffect(() => {
+    gameRef.current = currentGame
+  }, [currentGame])
+
   // Get settings for card dealing speed
   const { cardDealingSpeed: _cardDealingSpeed } = useSettingsStore()
 
@@ -691,10 +690,6 @@ const GameTable: React.FC = memo(() => {
 
             // This directly updates Redux state
             dispatch(setLocalBalance(result.userBalance));
-
-            // ✅ Refresh hook's state from database to update UI immediately
-            // The hook has its own cached state that needs to be refreshed
-            fetchGameBalanceImmediate();
         }
 
         // Play card dealing sounds with delay
@@ -714,454 +709,344 @@ const GameTable: React.FC = memo(() => {
         }, 2000) // Reset dealing state after animation
       }
     }
-  }, [user, betAmount, currentBalance, dispatch, audio, fetchGameBalanceImmediate])
+  }, [user, betAmount, currentBalance, dispatch, audio])
 
   const handleCancelDeal = useCallback(() => {
     setShowDealConfirmation(false)
   }, [])
 
   const handleHit = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot hit: Game not in PLAYING state', {
-        currentState: currentGame.state,
-        gameId: currentGame.id
-      })
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
 
-    // Play button click sound
     audio.playButtonSound()
 
-    const requestKey = `game-action-${currentGame.id}-hit`
-    
-    // Set loading state immediately
+    const requestKey = `game-action-${activeGame.id}-hit`
+
     dispatch(setLoading(true))
-    
-    // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
+
     return await requestQueue.execute(requestKey, async () => {
+      const queuedGame = gameRef.current
+      if (!queuedGame || queuedGame.id !== activeGame.id || queuedGame.state !== 'PLAYING') {
+        console.warn('Game is not in PLAYING state, action denied')
+        dispatch(setLoading(false))
+        return
+      }
+
       try {
-        const result = await socketManager.performGameAction(
-          currentGame.id, 
-          'hit'
-        )
-        // Play card deal sound
+        const result = await socketManager.performGameAction(queuedGame.id, 'hit')
+
         audio.playCardDealSound()
-        // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
 
-        // ✅ Update Redux balance immediately if API includes it
         if (result?.userBalance !== undefined) {
           dispatch(setLocalBalance(result.userBalance))
-        }
-
-        // ✅ Refresh balance from database if game ended (bust or 21)
-        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-          if (result?.userBalance !== undefined) {
-            console.log('✅ Game End Balance Update (WebSocket):', {
-              action: 'hit',
-              newBalance: result.userBalance,
-              gameState: result.game.state,
-              gameResult: result.game.result
-            })
-          }
-          fetchGameBalanceImmediate()
         }
 
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
-        
-        // Check if error is due to game state (don't retry)
+
         if (error?.details?.currentState === 'ENDED') {
-          console.warn('[GameTable] Game already ended, skipping action');
-          return; // Don't retry on HTTP
+          console.warn('[GameTable] Game already ended, skipping action')
+          return
         }
-        
-        // Fallback to HTTP API if WebSocket fails
+
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        const httpResult = await dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'hit', 
-          userId: user.id 
-        }))
-        
-        // ✅ Extract and update balance from HTTP response
+        const httpResult = await dispatch(
+          makeGameAction({
+            gameId: queuedGame.id,
+            action: 'hit',
+            userId: user.id
+          })
+        )
+
         if (isGameActionResponse(httpResult?.payload)) {
           const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
             newBalance: payload.userBalance,
             action: 'hit',
-            gameId: currentGame.id
+            gameId: queuedGame.id
           })
           dispatch(setLocalBalance(payload.userBalance))
-          // Immediately refresh balance from database to ensure UI sync
-          fetchGameBalanceImmediate()
         }
-        
+
         return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager, audio])
 
   const handleStand = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot stand: Game not in PLAYING state', {
-        currentState: currentGame.state,
-        gameId: currentGame.id
-      })
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
 
-    // Play button click sound
     audio.playButtonSound()
 
-    const requestKey = `game-action-${currentGame.id}-stand`
-    
-    // Set loading state immediately
+    const requestKey = `game-action-${activeGame.id}-stand`
+
     dispatch(setLoading(true))
-    
-    // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
+
     return await requestQueue.execute(requestKey, async () => {
+      const queuedGame = gameRef.current
+      if (!queuedGame || queuedGame.id !== activeGame.id || queuedGame.state !== 'PLAYING') {
+        console.warn('Game is not in PLAYING state, action denied')
+        dispatch(setLoading(false))
+        return
+      }
+
       try {
-        const result = await socketManager.performGameAction(
-          currentGame.id, 
-          'stand'
-        )
-        // Update Redux state with WebSocket result
+        const result = await socketManager.performGameAction(queuedGame.id, 'stand')
+
         dispatch(updateFromSocket(result))
 
-        // ✅ Update Redux balance immediately if API includes it
         if (result?.userBalance !== undefined) {
           dispatch(setLocalBalance(result.userBalance))
-        }
-
-        // ✅ Refresh balance from database when game ends (stand always ends)
-        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-          if (result?.userBalance !== undefined) {
-            console.log('✅ Game End Balance Update (WebSocket):', {
-              action: 'stand',
-              newBalance: result.userBalance,
-              gameState: result.game.state,
-              gameResult: result.game.result
-            })
-          }
-          fetchGameBalanceImmediate()
         }
 
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
-        
-        // Check if error is due to game state (don't retry)
+
         if (error?.details?.currentState === 'ENDED') {
-          console.warn('[GameTable] Game already ended, skipping action');
-          return; // Don't retry on HTTP
+          console.warn('[GameTable] Game already ended, skipping action')
+          return
         }
-        
-        // Fallback to HTTP API if WebSocket fails
+
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        const httpResult = await dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'stand', 
-          userId: user.id 
-        }))
-        
-        // ✅ Extract and update balance from HTTP response
+        const httpResult = await dispatch(
+          makeGameAction({
+            gameId: queuedGame.id,
+            action: 'stand',
+            userId: user.id
+          })
+        )
+
         if (isGameActionResponse(httpResult?.payload)) {
           const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
             newBalance: payload.userBalance,
             action: 'stand',
-            gameId: currentGame.id
+            gameId: queuedGame.id
           })
           dispatch(setLocalBalance(payload.userBalance))
-          // Immediately refresh balance from database to ensure UI sync
-          fetchGameBalanceImmediate()
         }
-        
+
         return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager, audio])
 
   const handleDoubleDown = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot double down: Game not in PLAYING state', {
-        currentState: currentGame.state,
-        gameId: currentGame.id
-      })
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
-    
-    // Additional validation for double down
-    if (currentGame.playerHand.cards.length !== 2) {
+
+    if (activeGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot double down: Must have exactly 2 cards')
       return
     }
-    
-    if (currentGame.currentBet > currentBalance) {
+
+    if (activeGame.currentBet > currentBalance) {
       console.warn('[GameTable] Cannot double down: Insufficient balance')
       return
     }
 
-    const requestKey = `game-action-${currentGame.id}-double`
-    
-    // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
+    const requestKey = `game-action-${activeGame.id}-double`
+
     return await requestQueue.execute(requestKey, async () => {
+      const queuedGame = gameRef.current
+      if (
+        !queuedGame ||
+        queuedGame.id !== activeGame.id ||
+        queuedGame.state !== 'PLAYING' ||
+        queuedGame.playerHand.cards.length !== 2
+      ) {
+        console.warn('Game is not in PLAYING state, action denied')
+        return
+      }
+
       try {
-        const result = await socketManager.performGameAction(
-          currentGame.id, 
-          'double_down'
-        )
-        // Update Redux state with WebSocket result
+        const result = await socketManager.performGameAction(queuedGame.id, 'double_down')
         dispatch(updateFromSocket(result))
 
-        // ✅ Update Redux balance immediately if API includes it
         if (result?.userBalance !== undefined) {
           dispatch(setLocalBalance(result.userBalance))
         }
 
-        // ✅ Refresh balance from database when game ends (double down always ends)
-        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-          if (result?.userBalance !== undefined) {
-            console.log('✅ Game End Balance Update (WebSocket):', {
-              action: 'double_down',
-              newBalance: result.userBalance,
-              gameState: result.game.state,
-              gameResult: result.game.result
-            })
-          }
-          fetchGameBalanceImmediate()
-        }
-
         return result
       } catch (error) {
-        // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        const httpResult = await dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'double_down', 
-          userId: user.id 
-        }))
-        
-        // ✅ Extract and update balance from HTTP response
+        const httpResult = await dispatch(
+          makeGameAction({
+            gameId: queuedGame.id,
+            action: 'double_down',
+            userId: user.id
+          })
+        )
+
         if (isGameActionResponse(httpResult?.payload)) {
           const payload = httpResult.payload
           console.log('[GameTable] Balance updated via HTTP:', {
             newBalance: payload.userBalance,
             action: 'double_down',
-            gameId: currentGame.id
+            gameId: queuedGame.id
           })
           dispatch(setLocalBalance(payload.userBalance))
-          // Immediately refresh balance from database to ensure UI sync
-          fetchGameBalanceImmediate()
         }
-        
+
         return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, currentBalance, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager, currentBalance])
 
   const handleInsurance = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot take insurance: Game not in PLAYING state')
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
-    
-    // Insurance only valid if dealer shows Ace
-    if (!currentGame.dealerHand?.cards?.[0] || currentGame.dealerHand.cards[0].rank !== 'A') {
+
+    if (!activeGame.dealerHand?.cards?.[0] || activeGame.dealerHand.cards[0].rank !== 'A') {
       console.warn('[GameTable] Cannot take insurance: Dealer not showing Ace')
       return
     }
 
     try {
-      const result = await socketManager.performGameAction(
-        currentGame.id, 
-        'insurance'
-      )
+      const result = await socketManager.performGameAction(activeGame.id, 'insurance')
       dispatch(updateFromSocket(result))
 
-      // ✅ Update Redux balance immediately if API includes it
       if (result?.userBalance !== undefined) {
         dispatch(setLocalBalance(result.userBalance))
       }
-
-      // ✅ Refresh balance from database if game ended
-      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-        if (result?.userBalance !== undefined) {
-          console.log('✅ Game End Balance Update (WebSocket):', {
-            action: 'insurance',
-            newBalance: result.userBalance,
-            gameState: result.game.state,
-            gameResult: result.game.result
-          })
-        }
-        fetchGameBalanceImmediate()
-      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      const httpResult = await dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'insurance', 
-        userId: user.id 
-      }))
-      
-      // ✅ Extract and update balance from HTTP response
+      const httpResult = await dispatch(
+        makeGameAction({
+          gameId: activeGame.id,
+          action: 'insurance',
+          userId: user.id
+        })
+      )
+
       if (isGameActionResponse(httpResult?.payload)) {
         const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
           newBalance: payload.userBalance,
           action: 'insurance',
-          gameId: currentGame.id
+          gameId: activeGame.id
         })
         dispatch(setLocalBalance(payload.userBalance))
-        // Immediately refresh balance from database to ensure UI sync
-        fetchGameBalanceImmediate()
       }
     }
-  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager])
 
   const handleSplit = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot split: Game not in PLAYING state')
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
-    
-    // Split only valid with 2 cards of same rank
-    if (currentGame.playerHand.cards.length !== 2) {
+
+    if (activeGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot split: Must have exactly 2 cards')
       return
     }
-    
-    const [card1, card2] = currentGame.playerHand.cards
+
+    const [card1, card2] = activeGame.playerHand.cards
     if (!card1 || !card2 || card1.rank !== card2.rank) {
       console.warn('[GameTable] Cannot split: Cards must be same rank')
       return
     }
 
     try {
-      const result = await socketManager.performGameAction(
-        currentGame.id, 
-        'split'
-      )
+      const result = await socketManager.performGameAction(activeGame.id, 'split')
       dispatch(updateFromSocket(result))
 
-      // ✅ Update Redux balance immediately if API includes it
       if (result?.userBalance !== undefined) {
         dispatch(setLocalBalance(result.userBalance))
       }
-
-      // ✅ Refresh balance from database if game ended
-      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-        if (result?.userBalance !== undefined) {
-          console.log('✅ Game End Balance Update (WebSocket):', {
-            action: 'split',
-            newBalance: result.userBalance,
-            gameState: result.game.state,
-            gameResult: result.game.result
-          })
-        }
-        fetchGameBalanceImmediate()
-      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      const httpResult = await dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'split', 
-        userId: user.id 
-      }))
-      
-      // ✅ Extract and update balance from HTTP response
+      const httpResult = await dispatch(
+        makeGameAction({
+          gameId: activeGame.id,
+          action: 'split',
+          userId: user.id
+        })
+      )
+
       if (isGameActionResponse(httpResult?.payload)) {
         const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
           newBalance: payload.userBalance,
           action: 'split',
-          gameId: currentGame.id
+          gameId: activeGame.id
         })
         dispatch(setLocalBalance(payload.userBalance))
-        // Immediately refresh balance from database to ensure UI sync
-        fetchGameBalanceImmediate()
       }
     }
-  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager])
 
   const handleSurrender = useCallback(async () => {
-    if (!currentGame || !user) return
-    
-    // ✅ CLIENT-SIDE STATE VALIDATION
-    if (currentGame.state !== 'PLAYING') {
-      console.warn('[GameTable] Cannot surrender: Game not in PLAYING state')
+    if (!user) return
+
+    const activeGame = gameRef.current
+    if (!activeGame || activeGame.state !== 'PLAYING') {
+      console.warn('Game is not in PLAYING state, action denied')
       return
     }
-    
-    // Surrender only valid with 2 cards (first decision)
-    if (currentGame.playerHand.cards.length !== 2) {
+
+    if (activeGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot surrender: Must have exactly 2 cards')
       return
     }
 
     try {
-      const result = await socketManager.performGameAction(
-        currentGame.id, 
-        'surrender'
-      )
+      const result = await socketManager.performGameAction(activeGame.id, 'surrender')
       dispatch(updateFromSocket(result))
 
-      // ✅ Update Redux balance immediately if API includes it
       if (result?.userBalance !== undefined) {
         dispatch(setLocalBalance(result.userBalance))
       }
-
-      // ✅ Refresh balance from database when game ends (surrender always ends)
-      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
-        if (result?.userBalance !== undefined) {
-          console.log('✅ Game End Balance Update (WebSocket):', {
-            action: 'surrender',
-            newBalance: result.userBalance,
-            gameState: result.game.state,
-            gameResult: result.game.result
-          })
-        }
-        fetchGameBalanceImmediate()
-      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      const httpResult = await dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'surrender', 
-        userId: user.id 
-      }))
-      
-      // ✅ Extract and update balance from HTTP response
+      const httpResult = await dispatch(
+        makeGameAction({
+          gameId: activeGame.id,
+          action: 'surrender',
+          userId: user.id
+        })
+      )
+
       if (isGameActionResponse(httpResult?.payload)) {
         const payload = httpResult.payload
         console.log('[GameTable] Balance updated via HTTP:', {
           newBalance: payload.userBalance,
           action: 'surrender',
-          gameId: currentGame.id
+          gameId: activeGame.id
         })
         dispatch(setLocalBalance(payload.userBalance))
-        // Immediately refresh balance from database to ensure UI sync
-        fetchGameBalanceImmediate()
       }
     }
-  }, [currentGame, user, dispatch, socketManager, fetchGameBalanceImmediate])
+  }, [user, dispatch, socketManager])
 
   const handlePlayAgain = useCallback(() => {
     setShowResultModal(false)
