@@ -289,29 +289,41 @@ export async function POST(request: NextRequest) {
         result = 'PUSH'
       }
 
-      // Calculate payout
-      switch (result) {
-        case 'WIN':
-          payout = betAmount * 2
-          break
-        case 'BLACKJACK':
-          payout = Math.floor(betAmount * 2.5)
-          break
-        case 'PUSH':
-          payout = betAmount
-          break
-        case 'SURRENDER':
-          payout = Math.floor(betAmount / 2)
-          break
-        case 'LOSE':
-        default:
-          payout = 0
-          break
+      // 💰 FIX LOGIKA PAYOUT (MODAL + PROFIT)
+      // Ingat: Modal (Bet) SUDAH diambil saat Start Game (/play).
+      // Jadi kita harus mengembalikan Modal + Profit.
+
+      let multiplier = 0;
+      let balanceChange = 0;
+
+      if (result === 'BLACKJACK') {
+        multiplier = 2.5; // (Contoh: Bet 10 -> Terima 25) -> Profit bersih 15
+      } else if (result === 'WIN') {
+        multiplier = 2.0; // (Contoh: Bet 10 -> Terima 20) -> Profit bersih 10
+      } else if (result === 'PUSH') {
+        multiplier = 1.0; // (Contoh: Bet 10 -> Terima 10) -> Balik Modal
+      } else if (result === 'SURRENDER') {
+        multiplier = 0.5; // (Contoh: Bet 10 -> Terima 5) -> Kehilangan setengah modal
+      } else {
+        multiplier = 0.0; // LOSE -> Tidak terima apa-apa
+      }
+
+      payout = betAmount * multiplier;
+
+      // Handle Double Down (Jika ada fitur ini)
+      if (action === 'double_down') {
+        // Double down biasanya bet x2. Kita anggap bet tambahan diambil sekarang.
+        // Tapi untuk simplifikasi debug sekarang, pastikan logic dasar ini jalan dulu.
+        // balanceChange = payout - currentBet; (Complex logic, skip dulu)
+        balanceChange = payout;
+      } else {
+        balanceChange = payout;
       }
 
       // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
         payout = 0
+        balanceChange = 0
       }
 
       netProfit = payout - betAmount
@@ -346,7 +358,7 @@ export async function POST(request: NextRequest) {
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: { increment: payout } },  // ✅ ATOMIC: Add full payout (includes original bet), since bet was already deducted in play.ts
+            data: { balance: { increment: balanceChange } },  // ✅ ATOMIC: Add full payout (stake + profit), since bet was already deducted in play.ts
             select: { balance: true },
           })
         : Promise.resolve(null)
