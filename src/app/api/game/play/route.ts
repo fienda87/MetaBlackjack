@@ -144,8 +144,8 @@ export async function POST(request: NextRequest) {
           result: result as any,
           netProfit,
           winAmount: payout,
-          playerHand: { ...playerHand, cards: playerCards },
-          dealerHand: { ...fullDealerHand, cards: dealerCards },
+          playerHand: { ...playerHand, cards: playerCards } as any,
+          dealerHand: { ...fullDealerHand, cards: dealerCards } as any,
           deck: deck as any,
           gameStats: { 
               totalHands: 1, 
