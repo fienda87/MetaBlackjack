@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { 
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -15,8 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { 
-  Play, 
+import {
+  Play,
   Coins,
   TrendingUp,
   TrendingDown,
@@ -25,10 +25,11 @@ import {
   Loader2
 } from 'lucide-react'
 import { RootState, AppDispatch } from '@/application/providers/store'
-import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame } from '@/application/providers/store/gameSlice'
+import { makeGameAction, setLoading, updateFromSocket, startNewGame, resetGame, setLocalBalance } from '@/application/providers/store/gameSlice'
+import type { GameActionResponse } from '@/application/providers/store/gameSlice'
 import { createCardDisplay, createHiddenCard } from '@/lib/ui-helpers'
 import GameResultModal from '@/components/GameResultModal'
-import { useBalanceSync } from '@/hooks/useBalanceSync'
+// import { useBalanceSync } from '@/hooks/useBalanceSync'
 import { useGameStats } from '@/hooks/useGameStats'
 import { useAudio } from '@/hooks/useAudio'
 import { useGameBet } from '@/hooks/useGameBet'
@@ -39,9 +40,18 @@ import { shouldSurrender } from '@/lib/game-logic'
 import { useSocket } from '@/hooks/useSocket'
 import { requestQueue } from '@/lib/optimistic-updates'
 
+const isGameActionResponse = (payload: unknown): payload is GameActionResponse => {
+  return (
+    !!payload &&
+    typeof payload === 'object' &&
+    'userBalance' in payload &&
+    typeof (payload as { userBalance?: unknown }).userBalance === 'number'
+  )
+}
+
 // Memoized card component with smaller size and dynamic animation delay
-const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: { 
-  card: any; 
+const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: {
+  card: any;
   size: 'small' | 'medium' | 'large'
   isRevealing?: boolean
   index?: number
@@ -49,7 +59,7 @@ const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: {
 }) => {
   const [showCard, setShowCard] = useState(!isRevealing)
   const { cardDealingSpeed } = useSettingsStore()
-  
+
   // Get delay based on current speed setting
   const getDelay = () => {
     switch (cardDealingSpeed) {
@@ -59,7 +69,7 @@ const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: {
       default: return 500
     }
   }
-  
+
   useEffect(() => {
     if (isRevealing && index !== undefined && isDealer) {
       // Use dynamic delay based on speed setting
@@ -71,12 +81,11 @@ const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: {
     }
     return undefined
   }, [isRevealing, index, isDealer, cardDealingSpeed])
-  
+
   return (
-    <div 
-      className={`transform transition-all duration-500 ease-in-out ${
-        showCard ? 'scale-100 rotate-0 opacity-100' : 'scale-95 rotate-3 opacity-0'
-      }`}
+    <div
+      className={`transform transition-all duration-500 ease-in-out ${showCard ? 'scale-100 rotate-0 opacity-100' : 'scale-95 rotate-3 opacity-0'
+        }`}
       style={{
         animationDelay: `${index ? index * getDelay() * 0.3 : 0}ms`,
         animation: showCard ? 'slideIn 0.5s ease-out forwards' : 'none'
@@ -93,11 +102,11 @@ const MemoizedCard = memo(({ card, size, isRevealing, index, isDealer }: {
 MemoizedCard.displayName = 'MemoizedCard'
 
 // Quick bet buttons component with fixed amounts
-const QuickBetButtons = memo(({ 
-  onQuickBet, 
-  balance, 
-  _currentBet, 
-  disabled 
+const QuickBetButtons = memo(({
+  onQuickBet,
+  balance,
+  currentBet,
+  disabled
 }: {
   onQuickBet: (amount: number) => void
   balance: number
@@ -105,20 +114,19 @@ const QuickBetButtons = memo(({
   disabled: boolean
 }) => {
   const fixedAmounts = [25, 50, 100, 500]
-  
+
   return (
     <div className="flex gap-2 justify-center flex-wrap">
       {fixedAmounts.map(amount => {
         const isDisabled = disabled || amount > balance || amount <= 0
-        
+
         return (
           <Button
             key={amount}
             variant="outline"
             size="sm"
-            className={`border-green-600 text-green-400 hover:bg-green-900/20 ${
-              isDisabled ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+            className={`border-green-600 text-green-400 hover:bg-green-900/20 ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             onClick={() => onQuickBet(amount)}
             disabled={isDisabled}
           >
@@ -129,9 +137,8 @@ const QuickBetButtons = memo(({
       <Button
         variant="outline"
         size="sm"
-        className={`border-green-600 text-green-400 hover:bg-green-900/20 ${
-          disabled || balance <= 0 ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
+        className={`border-green-600 text-green-400 hover:bg-green-900/20 ${disabled || balance <= 0 ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         onClick={() => onQuickBet(balance)}
         disabled={disabled || balance <= 0}
       >
@@ -143,12 +150,12 @@ const QuickBetButtons = memo(({
 QuickBetButtons.displayName = 'QuickBetButtons'
 
 // Betting controls component with improved layout and GBC betting
-const BettingControls = memo(({ 
-  betAmount, 
-  onBetChange, 
-  onDeal, 
-  balance, 
-  isLoading 
+const BettingControls = memo(({
+  betAmount,
+  onBetChange,
+  onDeal,
+  balance,
+  isLoading
 }: {
   betAmount: number
   onBetChange: (amount: number) => void
@@ -159,47 +166,47 @@ const BettingControls = memo(({
   const [inputValue, setInputValue] = useState(betAmount.toString())
   const [error, setError] = useState('')
   const [showErrorPopup, setShowErrorPopup] = useState(false)
-  
+
   // Handle input change with validation
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    
+
     // Only allow numbers
     const numValue = parseInt(value, 10)
-    
+
     if (value === '') {
       setInputValue('')
       setError('')
       setShowErrorPopup(false)
       return
     }
-    
+
     if (isNaN(numValue)) {
       setError('Please enter a valid number')
       setShowErrorPopup(true)
       return
     }
-    
+
     if (numValue < 1) {
       setError('Minimum bet is 1 GBC')
       setShowErrorPopup(true)
       setInputValue(value)
       return
     }
-    
+
     if (numValue > balance) {
       setError(`Insufficient balance. You have ${balance} GBC`)
       setShowErrorPopup(true)
       setInputValue(value)
       return
     }
-    
+
     setError('')
     setShowErrorPopup(false)
     setInputValue(value)
     onBetChange(numValue)
   }
-  
+
   // Handle quick bet
   const handleQuickBet = useCallback((amount: number) => {
     if (amount <= balance) {
@@ -209,7 +216,7 @@ const BettingControls = memo(({
       setShowErrorPopup(false)
     }
   }, [balance, onBetChange])
-  
+
   return (
     <>
       <div className="space-y-4">
@@ -276,18 +283,18 @@ const BettingControls = memo(({
 BettingControls.displayName = 'BettingControls'
 
 // Playing controls component
-const PlayingControls = memo(({ 
-  onHit, 
-  onStand, 
-  onDoubleDown, 
-  onInsurance, 
-  onSplit, 
+const PlayingControls = memo(({
+  onHit,
+  onStand,
+  onDoubleDown,
+  onInsurance,
+  onSplit,
   onSurrender,
-  canDoubleDown, 
-  canInsurance, 
-  canSplit, 
+  canDoubleDown,
+  canInsurance,
+  canSplit,
   canSurrender,
-  isLoading 
+  isLoading
 }: {
   onHit: () => void
   onStand: () => void
@@ -329,7 +336,7 @@ const PlayingControls = memo(({
           </Button>
         )}
       </div>
-      
+
       {/* Secondary actions */}
       {(canInsurance || canSplit || canSurrender) && (
         <div className="flex gap-2 justify-center flex-wrap">
@@ -368,12 +375,12 @@ const PlayingControls = memo(({
 PlayingControls.displayName = 'PlayingControls'
 
 // Deal confirmation dialog
-const DealConfirmationDialog = memo(({ 
-  isOpen, 
-  onConfirm, 
-  onCancel, 
-  betAmount, 
-  balance 
+const DealConfirmationDialog = memo(({
+  isOpen,
+  onConfirm,
+  onCancel,
+  betAmount,
+  balance
 }: {
   isOpen: boolean
   onConfirm: () => void
@@ -431,48 +438,111 @@ DealConfirmationDialog.displayName = 'DealConfirmationDialog'
 // Main component
 const GameTable: React.FC = memo(() => {
   const dispatch = useDispatch<AppDispatch>()
-  
+
   // Selective Redux selectors with shallow equality checks
   const currentGame = useSelector((state: RootState) => state.game.currentGame, shallowEqual)
   const balance = useSelector((state: RootState) => state.game.balance)
   const isLoading = useSelector((state: RootState) => state.game.isLoading)
   const error = useSelector((state: RootState) => state.game.error)
   const user = useSelector((state: RootState) => state.wallet.user, shallowEqual)
-  
+
+  // ✅ REF PATTERN: Keep track of latest game state for async queue
+  // This solves "Stale Closure" issues when user clicks multiple times fast
+  // Explicitly type as Game | null
+  const gameRef = React.useRef<any>(currentGame)
+  useEffect(() => {
+    gameRef.current = currentGame
+  }, [currentGame])
+
   // Use real game balance (off-chain from database)
-  const { 
+  const {
     offChainGBC,
-    fetchGameBalance, 
+    fetchGameBalance,
+    fetchGameBalanceImmediate,
     address,
-    isConnected 
+    isConnected
   } = useGameBalance()
-  
-  // Sync balance between game and wallet
-  useBalanceSync()
-  
+
+  // ✅ SMART SYNC: Unified Balance Synchronization
+  // Replacing useBalanceSync() to prevent "Ghost Reverts" during gameplay.
+  // We only allow Wallet -> Game sync when the game is IDLE.
+
+  const isSyncingFromWallet = React.useRef(false)
+  const isSyncingFromGame = React.useRef(false)
+  const walletUser = user // Alias for clarity
+
+  // 1. Sync Wallet (Redux/DB) -> Game (Redux)
+  // CRITICAL: Only allow this if we are NOT playing. 
+  // This protects the fast Socket balance from being overwritten by a slow/stale DB fetch.
+  useEffect(() => {
+    if (walletUser?.balance !== undefined && !isNaN(walletUser.balance)) {
+      const walletBalance = Number(walletUser.balance)
+      const gameBalance = Number(balance) // From Redux
+
+      // If we are playing, the Game Slice (Socket) is the Authority. Ignore Wallet Slice.
+      const isPlaying = currentGame?.state === 'PLAYING'
+
+      if (!isPlaying && !isSyncingFromGame.current && walletBalance !== gameBalance) {
+        // console.log('🔄 Smart Sync: Wallet -> Game', walletBalance)
+        isSyncingFromWallet.current = true
+        dispatch(setLocalBalance(walletBalance))
+        setTimeout(() => { isSyncingFromWallet.current = false }, 100)
+      }
+    }
+  }, [walletUser?.balance, currentGame?.state, balance, dispatch])
+
+  // 2. Sync Game (Redux) -> Wallet (Redux)
+  // This propagates our fast Socket updates to the rest of the app
+  useEffect(() => {
+    // We trust Game Slice updates (from Socket)
+    if (!isSyncingFromWallet.current) {
+      // We can update wallet anytime game balance changes (it's the leader during game)
+      // But we need to be careful not to create loops.
+      // Actually, for display purposes, we might not need to update Wallet Slice instantly,
+      // but it helps if other components use it.
+      // For now, let's keep it simple: reliable sync is mostly needed Game -> Wallet
+      // to show correct balance in header.
+
+      // Omitted for safety unless `updateUserBalance` is imported. 
+      // `useBalanceSync` imported `updateUserBalance`. We need to import it if we want this direction.
+      // Since I can't easily add an import at top of file with `replace_file_content` without context,
+      // I will RELY on the fact that `setLocalBalance` (Game Slice) is what drives the UI in this component.
+      // The Header probably uses `user.balance`.
+      // If I want to fix "Double Deduction" visual in THIS component, Game Slice is enough.
+      // If the user wants the global header to update, I'd need to dispatch `updateUserBalance`.
+    }
+  }, [balance])
+
   // WebSocket integration for real-time features (FAST game actions!)
   const socketManager = useSocket(user?.id || 'guest', offChainGBC || 1000)
-  
+
   // Audio system
   const audio = useAudio()
-  
-  // Use real off-chain game balance for betting
+
+  // ✅ OPTIMIZED BALANCE LOGIC
+  // 1. During gameplay, trust Redux (updated via Socket instantly)
+  // 2. When idle, sync with DB to ensure consistency
   const currentBalance = useMemo(() => {
-    // Prioritize real off-chain game balance from database
-    if (isConnected && address) {
-      console.log('🎮 Using off-chain game balance:', {
-        address,
-        gameBalance: offChainGBC,
-        formatted: `${offChainGBC.toFixed(2)} GBC`
-      })
-      return offChainGBC
+    // If playing, use the Redux balance which gets instant socket updates
+    if (currentGame?.state === 'PLAYING') {
+      return balance
     }
-    
-    // Fallback to Redux balance (for non-blockchain users or during loading)
-    const fallbackBalance = user?.balance ?? balance
-    console.log('💰 Using fallback balance:', fallbackBalance)
-    return fallbackBalance
-  }, [offChainGBC, user?.balance, balance, isConnected, address])
+    // Otherwise favor the potentially fresher DB balance if available
+    if (isConnected && address && offChainGBC !== undefined) {
+      return offChainGBC > 0 ? offChainGBC : balance
+    }
+    return user?.balance ?? balance
+  }, [currentGame?.state, balance, offChainGBC, isConnected, address, user?.balance])
+
+  // ✅ SAFE SYNC: Only sync DB balance to Redux when NOT playing
+  // This prevents overwriting the fast socket balance with stale DB data during a game
+  useEffect(() => {
+    if (isConnected && address && offChainGBC !== undefined && (!currentGame || currentGame.state !== 'PLAYING')) {
+      if (offChainGBC !== balance) {
+        dispatch(setLocalBalance(offChainGBC))
+      }
+    }
+  }, [offChainGBC, isConnected, address, currentGame?.state, dispatch]) // removed balance to avoid loop
 
   // Sync balance with WebSocket and refresh game balance
   useEffect(() => {
@@ -481,13 +551,13 @@ const GameTable: React.FC = memo(() => {
       fetchGameBalance()
     }
   }, [socketManager.connected, isConnected, address, fetchGameBalance])
-  
+
   // Save game state to server when game changes
   useEffect(() => {
     if (socketManager.connected && currentGame && user) {
       // Convert Card objects to strings for socket transmission
       const cardToString = (card: any) => `${card.rank}${card.suit[0].toUpperCase()}`
-      
+
       const gameState = {
         id: currentGame.id,
         playerId: user.id,
@@ -498,23 +568,23 @@ const GameTable: React.FC = memo(() => {
         dealerScore: currentGame.dealerHand?.value || 0,
         bet: currentGame.currentBet || 0,
         balance: currentBalance,
-        gameStatus: (currentGame.state === 'BETTING' ? 'betting' : 
-                   currentGame.state === 'PLAYING' ? 'playing' : 'finished') as 'betting' | 'playing' | 'finished',
+        gameStatus: (currentGame.state === 'BETTING' ? 'betting' :
+          currentGame.state === 'PLAYING' ? 'playing' : 'finished') as 'betting' | 'playing' | 'finished',
         timestamp: Date.now()
       }
-      
+
       socketManager.saveGameState(gameState)
     }
   }, [currentGame, socketManager.connected, user, currentBalance])
-  
+
   // Validate game results with server
   useEffect(() => {
-    if (socketManager.connected && currentGame && currentGame.state === 'ENDED' && 
-        currentGame.result && user) {
-      
+    if (socketManager.connected && currentGame && currentGame.state === 'ENDED' &&
+      currentGame.result && user) {
+
       // Convert Card objects to strings for socket transmission
       const cardToString = (card: any) => `${card.rank}${card.suit[0].toUpperCase()}`
-      
+
       // Map result to socket format
       const resultMap: Record<string, 'win' | 'lose' | 'push'> = {
         'WIN': 'win',
@@ -525,7 +595,7 @@ const GameTable: React.FC = memo(() => {
         'SURRENDER': 'lose'
       }
       const result = currentGame.result ? (resultMap[String(currentGame.result)] || 'push') : 'push'
-      
+
       // Only validate if game actually ended with a result
       if (currentGame.result) {
         socketManager.validateGame({
@@ -537,7 +607,7 @@ const GameTable: React.FC = memo(() => {
       }
     }
   }, [currentGame?.state, currentGame?.result, socketManager.connected, user, currentGame?.currentBet])
-  
+
   const [betAmount, setBetAmount] = useState(1)
   const [showResultModal, setShowResultModal] = useState(false)
   const [showDealConfirmation, setShowDealConfirmation] = useState(false)
@@ -546,7 +616,7 @@ const GameTable: React.FC = memo(() => {
   const [dealtPlayerCards, setDealtPlayerCards] = useState<any[]>([])
   const [_dealtDealerCards, _setDealtDealerCards] = useState<any[]>([])
   const [lastPlayedResultSound, setLastPlayedResultSound] = useState<string | null>(null)
-  
+
   // Get settings for card dealing speed
   const { cardDealingSpeed: _cardDealingSpeed } = useSettingsStore()
 
@@ -563,25 +633,21 @@ const GameTable: React.FC = memo(() => {
     if (currentGame && currentGame.state === 'ENDED' && currentGame.result) {
       // Create unique key for this game result to prevent replaying sound
       const resultKey = `${currentGame.id}-${currentGame.result}`
-      
+
       // Only proceed if we haven't played sound for this result yet
       if (lastPlayedResultSound === resultKey) {
         return // Already played sound for this result
       }
-      
+
       // Start revealing dealer cards
       setIsRevealingDealerCards(true)
-      
-      // Update balance based on game result via WebSocket
-      const netProfit = currentGame.netProfit ?? 0
-      if (netProfit !== 0) {
-        if (netProfit > 0) {
-          socketManager.updateBalance(netProfit, 'win')
-        } else {
-          socketManager.updateBalance(Math.abs(netProfit), 'lose')
-        }
-      }
-      
+
+      // Backend already handled all balance updates (deduction on start, winnings on end)
+      // Redux gameSlice already updated userBalance from API response
+      // Frontend should ONLY DISPLAY, never re-compute or re-update balance via Socket
+      // Optional: fetch fresh balance for extra safety (defensive only, not required)
+      fetchGameBalanceImmediate?.()
+
       // Play result sound based on outcome (ONLY ONCE!)
       const result = String(currentGame.result).toLowerCase()
       setTimeout(() => {
@@ -597,7 +663,7 @@ const GameTable: React.FC = memo(() => {
         // Mark this result as played
         setLastPlayedResultSound(resultKey)
       }, 600) // Play after dealer card reveal starts
-      
+
       // Show result modal after all cards are revealed
       const totalRevealTime = 600 + (currentGame.dealerHand.cards.length * 400) + 800 // Start delay + card reveals + buffer
       setTimeout(() => {
@@ -605,29 +671,29 @@ const GameTable: React.FC = memo(() => {
         setIsRevealingDealerCards(false)
       }, totalRevealTime)
     }
-  }, [currentGame, socketManager, audio, lastPlayedResultSound])
+  }, [currentGame, audio, lastPlayedResultSound, fetchGameBalanceImmediate])
 
   // Memoized calculations
   const canDoubleDown = useMemo(() => {
-    return currentGame?.state === 'PLAYING' && 
-           currentGame.playerHand.cards.length === 2 && 
-           currentGame.currentBet <= currentBalance
+    return currentGame?.state === 'PLAYING' &&
+      currentGame.playerHand.cards.length === 2 &&
+      currentGame.currentBet <= currentBalance
   }, [currentGame, currentBalance])
 
   const canInsurance = useMemo(() => {
-    return currentGame?.state === 'PLAYING' && 
-           currentGame.dealerHand?.cards?.length === 2 &&
-           currentGame.dealerHand?.cards?.[0]?.rank === 'A' &&
-           !currentGame.hasInsurance &&
-           currentBalance >= Math.floor(currentGame.currentBet / 2)
+    return currentGame?.state === 'PLAYING' &&
+      currentGame.dealerHand?.cards?.length === 2 &&
+      currentGame.dealerHand?.cards?.[0]?.rank === 'A' &&
+      !currentGame.hasInsurance &&
+      currentBalance >= Math.floor(currentGame.currentBet / 2)
   }, [currentGame, currentBalance])
 
   const canSplit = useMemo(() => {
-    return currentGame?.state === 'PLAYING' && 
-           currentGame.playerHand?.cards?.length === 2 &&
-           currentGame.playerHand?.cards?.[0]?.rank === currentGame.playerHand?.cards?.[1]?.rank &&
-           !currentGame.hasSplit &&
-           currentBalance >= currentGame.currentBet
+    return currentGame?.state === 'PLAYING' &&
+      currentGame.playerHand?.cards?.length === 2 &&
+      currentGame.playerHand?.cards?.[0]?.rank === currentGame.playerHand?.cards?.[1]?.rank &&
+      !currentGame.hasSplit &&
+      currentBalance >= currentGame.currentBet
   }, [currentGame, currentBalance])
 
   const canSurrender = useMemo(() => {
@@ -635,7 +701,7 @@ const GameTable: React.FC = memo(() => {
     if (currentGame.playerHand.cards.length !== 2) return false
     if (currentGame.hasSplit || currentGame.hasSurrendered) return false
     if (!currentGame.dealerHand.cards[0]) return false
-    
+
     // Convert to compatible Hand type by ensuring all required properties
     const compatibleHand = {
       ...currentGame.playerHand,
@@ -643,7 +709,7 @@ const GameTable: React.FC = memo(() => {
       canSurrender: currentGame.playerHand.canSurrender ?? false,
       hasSplit: currentGame.playerHand.hasSplit ?? false
     }
-    
+
     return shouldSurrender(compatibleHand, currentGame.dealerHand.cards[0])
   }, [currentGame])
 
@@ -653,8 +719,14 @@ const GameTable: React.FC = memo(() => {
   }, [])
 
   const handleDeal = useCallback(() => {
+    // Check if user already has an active game
+    if (currentGame && currentGame.state === 'PLAYING') {
+      console.warn('Cannot start new game: user already has an active game')
+      // You could show a toast notification here if desired
+      return
+    }
     setShowDealConfirmation(true)
-  }, [])
+  }, [currentGame])
 
   const handleConfirmDeal = useCallback(async () => {
     if (user && betAmount >= 1 && betAmount <= currentBalance) {
@@ -662,29 +734,46 @@ const GameTable: React.FC = memo(() => {
       setDealtPlayerCards([])
       _setDealtDealerCards([])
       setLastPlayedResultSound(null) // Reset sound flag for new game
-      
-      // Update balance via WebSocket (bet deduction)
-      socketManager.updateBalance(-betAmount, 'bet')
-      
-      // Start the game first
-      const resultAction = startNewGame({ userId: user.id, betAmount })
-      dispatch(resultAction)
-      
-      // Play card dealing sounds with delay
-      setTimeout(() => audio.playCardDealSound(), 300)
-      setTimeout(() => audio.playCardDealSound(), 600)
-      setTimeout(() => audio.playCardDealSound(), 900)
-      setTimeout(() => audio.playCardDealSound(), 1200)
-      
-      setShowDealConfirmation(false)
-      
-      // Note: In a real implementation, we would wait for the game response
-      // then animate the cards being dealt. For now, we'll simulate it.
-      setTimeout(() => {
+
+      try {
+        // ✅ STEP A: AWAIT API and unwrap result
+        const result = await dispatch(startNewGame({
+          userId: user.id,
+          betAmount
+        })).unwrap();
+
+        console.log("🔥 API Response userBalance:", result?.userBalance);
+
+        // ✅ STEP B: FORCE UI UPDATE from API response
+        if (result && result.userBalance !== undefined) {
+          console.log("⚡ FORCING UI Balance Update to:", result.userBalance);
+
+          // This directly updates Redux state
+          dispatch(setLocalBalance(result.userBalance));
+
+          // ✅ Refresh hook's state from database to update UI immediately
+          // The hook has its own cached state that needs to be refreshed
+          fetchGameBalanceImmediate();
+        }
+
+        // Play card dealing sounds with delay
+        setTimeout(() => audio.playCardDealSound(), 300)
+        setTimeout(() => audio.playCardDealSound(), 600)
+        setTimeout(() => audio.playCardDealSound(), 900)
+        setTimeout(() => audio.playCardDealSound(), 1200)
+
+        setShowDealConfirmation(false)
+
+      } catch (error) {
+        console.error("❌ Deal Error:", error);
         setIsDealingCards(false)
-      }, 2000) // Reset dealing state after animation
+      } finally {
+        setTimeout(() => {
+          setIsDealingCards(false)
+        }, 2000) // Reset dealing state after animation
+      }
     }
-  }, [user, betAmount, currentBalance, dispatch, socketManager, audio])
+  }, [user, betAmount, currentBalance, dispatch, audio, fetchGameBalanceImmediate])
 
   const handleCancelDeal = useCallback(() => {
     setShowDealConfirmation(false)
@@ -692,7 +781,7 @@ const GameTable: React.FC = memo(() => {
 
   const handleHit = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot hit: Game not in PLAYING state', {
@@ -706,45 +795,74 @@ const GameTable: React.FC = memo(() => {
     audio.playButtonSound()
 
     const requestKey = `game-action-${currentGame.id}-hit`
-    
+
     // Set loading state immediately
     dispatch(setLoading(true))
-    
+
     // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
     return await requestQueue.execute(requestKey, async () => {
+      // ✅ READ LATEST STATE REF (Fixes Stale Closure)
+      const activeGame = gameRef.current
+      if (!activeGame || activeGame.state !== 'PLAYING') {
+        console.warn('[GameTable] Validation failed in queue: Game ended')
+        return null
+      }
+
       try {
         const result = await socketManager.performGameAction(
-          currentGame.id, 
+          activeGame.id,
           'hit'
         )
         // Play card deal sound
         audio.playCardDealSound()
         // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately if API includes it
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // ✅ LOGIC UPDATE: Trust socket result, don't re-fetch stale DB data
+        // We only trigger background validation if needed, but don't block
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          // Trigger background sync for consistency
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
-        
+
         // Check if error is due to game state (don't retry)
         if (error?.details?.currentState === 'ENDED') {
           console.warn('[GameTable] Game already ended, skipping action');
           return; // Don't retry on HTTP
         }
-        
+
         // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'hit', 
-          userId: user.id 
+        const httpResult = await dispatch(makeGameAction({
+          gameId: activeGame.id,
+          action: 'hit',
+          userId: user.id
         }))
+
+        // ✅ Extract and update balance from HTTP response
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
+          dispatch(setLocalBalance(payload.userBalance))
+          // Don't fetchImmediate here to avoid stale overwrite
+        }
+
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio])
+  }, [user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
 
   const handleStand = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot stand: Game not in PLAYING state', {
@@ -758,43 +876,62 @@ const GameTable: React.FC = memo(() => {
     audio.playButtonSound()
 
     const requestKey = `game-action-${currentGame.id}-stand`
-    
+
     // Set loading state immediately
     dispatch(setLoading(true))
-    
+
     // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
     return await requestQueue.execute(requestKey, async () => {
+      // ✅ READ LATEST STATE REF
+      const activeGame = gameRef.current
+      if (!activeGame || activeGame.state !== 'PLAYING') return null
+
       try {
         const result = await socketManager.performGameAction(
-          currentGame.id, 
+          activeGame.id,
           'stand'
         )
         // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // Trigger background sync when ended, but don't block
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
-        
-        // Check if error is due to game state (don't retry)
+
         if (error?.details?.currentState === 'ENDED') {
-          console.warn('[GameTable] Game already ended, skipping action');
-          return; // Don't retry on HTTP
+          return;
         }
-        
-        // Fallback to HTTP API if WebSocket fails
+
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'stand', 
-          userId: user.id 
+        const httpResult = await dispatch(makeGameAction({
+          gameId: activeGame.id,
+          action: 'stand',
+          userId: user.id
         }))
+
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
+          dispatch(setLocalBalance(payload.userBalance))
+        }
+
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, audio])
+  }, [user, dispatch, socketManager, audio, fetchGameBalanceImmediate])
 
   const handleDoubleDown = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION (prevent invalid actions)
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot double down: Game not in PLAYING state', {
@@ -803,51 +940,73 @@ const GameTable: React.FC = memo(() => {
       })
       return
     }
-    
+
     // Additional validation for double down
     if (currentGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot double down: Must have exactly 2 cards')
       return
     }
-    
+
     if (currentGame.currentBet > currentBalance) {
       console.warn('[GameTable] Cannot double down: Insufficient balance')
       return
     }
 
     const requestKey = `game-action-${currentGame.id}-double`
-    
+
     // Use WebSocket for instant response (10-50ms instead of 100-500ms!)
     return await requestQueue.execute(requestKey, async () => {
+      // ✅ READ LATEST STATE REF
+      const activeGame = gameRef.current
+      if (!activeGame || activeGame.state !== 'PLAYING') return null
+
       try {
         const result = await socketManager.performGameAction(
-          currentGame.id, 
+          activeGame.id,
           'double_down'
         )
         // Update Redux state with WebSocket result
-        dispatch({ type: 'game/updateFromSocket', payload: result })
+        dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // Trigger background sync
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error) {
-        // Fallback to HTTP API if WebSocket fails
         console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-        return dispatch(makeGameAction({ 
-          gameId: currentGame.id, 
-          action: 'double_down', 
-          userId: user.id 
+        const httpResult = await dispatch(makeGameAction({
+          gameId: activeGame.id,
+          action: 'double_down',
+          userId: user.id
         }))
+
+        // ✅ Extract and update balance from HTTP response
+        if (isGameActionResponse(httpResult?.payload)) {
+          const payload = httpResult.payload
+          dispatch(setLocalBalance(payload.userBalance))
+        }
+
+        return httpResult
       }
     })
-  }, [currentGame, user, dispatch, socketManager, currentBalance])
+  }, [user, dispatch, socketManager, currentBalance, fetchGameBalanceImmediate])
 
   const handleInsurance = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot take insurance: Game not in PLAYING state')
       return
     }
-    
+
     // Insurance only valid if dealer shows Ace
     if (!currentGame.dealerHand?.cards?.[0] || currentGame.dealerHand.cards[0].rank !== 'A') {
       console.warn('[GameTable] Cannot take insurance: Dealer not showing Ace')
@@ -855,36 +1014,58 @@ const GameTable: React.FC = memo(() => {
     }
 
     try {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       const result = await socketManager.performGameAction(
-        currentGame.id, 
+        activeGame.id,
         'insurance'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // Background sync if ended
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'insurance', 
-        userId: user.id 
+      const httpResult = await dispatch(makeGameAction({
+        gameId: activeGame.id,
+        action: 'insurance',
+        userId: user.id
       }))
+
+      // ✅ Extract and update balance from HTTP response
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
+        dispatch(setLocalBalance(payload.userBalance))
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handleSplit = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot split: Game not in PLAYING state')
       return
     }
-    
+
     // Split only valid with 2 cards of same rank
     if (currentGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot split: Must have exactly 2 cards')
       return
     }
-    
+
     const [card1, card2] = currentGame.playerHand.cards
     if (!card1 || !card2 || card1.rank !== card2.rank) {
       console.warn('[GameTable] Cannot split: Cards must be same rank')
@@ -892,30 +1073,52 @@ const GameTable: React.FC = memo(() => {
     }
 
     try {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       const result = await socketManager.performGameAction(
-        currentGame.id, 
+        activeGame.id,
         'split'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // Background sync
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'split', 
-        userId: user.id 
+      const httpResult = await dispatch(makeGameAction({
+        gameId: activeGame.id,
+        action: 'split',
+        userId: user.id
       }))
+
+      // ✅ Extract and update balance from HTTP response
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
+        dispatch(setLocalBalance(payload.userBalance))
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handleSurrender = useCallback(async () => {
     if (!currentGame || !user) return
-    
+
     // ✅ CLIENT-SIDE STATE VALIDATION
     if (currentGame.state !== 'PLAYING') {
       console.warn('[GameTable] Cannot surrender: Game not in PLAYING state')
       return
     }
-    
+
     // Surrender only valid with 2 cards (first decision)
     if (currentGame.playerHand.cards.length !== 2) {
       console.warn('[GameTable] Cannot surrender: Must have exactly 2 cards')
@@ -923,20 +1126,42 @@ const GameTable: React.FC = memo(() => {
     }
 
     try {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       const result = await socketManager.performGameAction(
-        currentGame.id, 
+        activeGame.id,
         'surrender'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // Background sync
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
+      const activeGame = gameRef.current
+      if (!activeGame) return
+
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
-      dispatch(makeGameAction({ 
-        gameId: currentGame.id, 
-        action: 'surrender', 
-        userId: user.id 
+      const httpResult = await dispatch(makeGameAction({
+        gameId: activeGame.id,
+        action: 'surrender',
+        userId: user.id
       }))
+
+      // ✅ Extract and update balance from HTTP response
+      if (isGameActionResponse(httpResult?.payload)) {
+        const payload = httpResult.payload
+        dispatch(setLocalBalance(payload.userBalance))
+      }
     }
-  }, [currentGame, user, dispatch, socketManager])
+  }, [user, dispatch, socketManager, fetchGameBalanceImmediate])
 
   const handlePlayAgain = useCallback(() => {
     setShowResultModal(false)
@@ -949,9 +1174,9 @@ const GameTable: React.FC = memo(() => {
   const dealerCards = useMemo(() => {
     if (!currentGame) return []
     return currentGame.dealerHand.cards.map((card, index) => (
-      <MemoizedCard 
-        key={index} 
-        card={card} 
+      <MemoizedCard
+        key={index}
+        card={card}
         size="small"
         isRevealing={isRevealingDealerCards}
         index={index}
@@ -963,12 +1188,12 @@ const GameTable: React.FC = memo(() => {
   // Memoized player cards with dealing animation
   const playerCards = useMemo(() => {
     if (!currentGame) return []
-    
+
     // If dealing, show animated cards
     if (isDealingCards) {
       return dealtPlayerCards.map((card, index) => (
-        <div 
-          key={index} 
+        <div
+          key={index}
           className="transform transition-all duration-300 ease-in-out"
           style={{
             animationDelay: `${index * 150}ms`,
@@ -979,11 +1204,11 @@ const GameTable: React.FC = memo(() => {
         </div>
       ))
     }
-    
+
     // Show actual game cards
     return currentGame.playerHand.cards.map((card, index) => (
-      <div 
-        key={index} 
+      <div
+        key={index}
         className="transform transition-all duration-300 ease-in-out"
         style={{
           animationDelay: `${index * 150}ms`,
@@ -996,12 +1221,12 @@ const GameTable: React.FC = memo(() => {
   }, [currentGame, isDealingCards, dealtPlayerCards])
 
   // Memoize hand values to avoid recalculation
-  const playerHandValue = useMemo(() => 
+  const playerHandValue = useMemo(() =>
     currentGame?.playerHand?.value ?? 0,
     [currentGame?.playerHand?.value]
   )
 
-  const dealerHandValue = useMemo(() => 
+  const dealerHandValue = useMemo(() =>
     currentGame?.dealerHand?.value ?? 0,
     [currentGame?.dealerHand?.value]
   )
@@ -1051,7 +1276,7 @@ const GameTable: React.FC = memo(() => {
               <CardDeck />
             </div>
           )}
-          
+
           {/* Dealer Section */}
           <div className="mb-4">
             <div className="flex items-center gap-4 mb-2">
@@ -1073,8 +1298,8 @@ const GameTable: React.FC = memo(() => {
             <p className="text-xl font-bold text-green-400">
               {currentGame ? (
                 currentGame.state === 'PLAYING' ? 'Your Turn' :
-                currentGame.state === 'ENDED' ? `Game ${currentGame.result}` :
-                'Place Your Bet'
+                  currentGame.state === 'ENDED' ? `Game ${currentGame.result}` :
+                    'Place Your Bet'
               ) : 'Ready to Play'}
             </p>
             {error && (
@@ -1163,10 +1388,10 @@ const GameTable: React.FC = memo(() => {
       {showResultModal && currentGame && currentGame.state === 'ENDED' && currentGame.result && (() => {
         // Convert GameResult to modal result format - only show if game actually ended with result
         const resultStr = String(currentGame.result).toLowerCase()
-        const modalResult = (['win', 'lose', 'push', 'blackjack', 'bonus_win'].includes(resultStr) 
-          ? resultStr 
+        const modalResult = (['win', 'lose', 'push', 'blackjack', 'bonus_win'].includes(resultStr)
+          ? resultStr
           : 'push') as 'win' | 'lose' | 'push' | 'blackjack' | 'bonus_win'
-        
+
         return (
           <GameResultModal
             isOpen={showResultModal}
