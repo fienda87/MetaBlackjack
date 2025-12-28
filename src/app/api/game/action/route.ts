@@ -1,3 +1,35 @@
+/**
+ * 🎯 GAME ACTION API ROUTE
+ * 
+ * Handles all game actions: hit, stand, double_down, insurance, surrender, set_ace_value
+ * 
+ * 🔑 CRITICAL PAYOUT LOGIC (prevents double-deduction bug):
+ * 
+ * 1. Bet is ALREADY DEDUCTED in /game/play route when game starts
+ * 2. This route ONLY RETURNS money to user (never deducts)
+ * 3. Uses INCREMENT operation (never decrement) for balance updates
+ * 4. balanceChange is ALWAYS >= 0 (enforced by safeguard)
+ * 
+ * PAYOUT MULTIPLIERS:
+ * - BLACKJACK: 2.5x bet (stake + 1.5x profit)
+ * - WIN:       2.0x bet (stake + 1x profit)
+ * - PUSH:      1.0x bet (refund stake only)
+ * - SURRENDER: 0.5x bet (return half stake)
+ * - LOSE:      0.0x bet (no refund, bet already taken)
+ * 
+ * RESPONSE STRUCTURE:
+ * {
+ *   success: true,
+ *   game: {
+ *     result: "WIN" | "LOSE" | "PUSH" | "BLACKJACK" | "SURRENDER",
+ *     netProfit: number,  // Can be negative for losses
+ *     state: "ENDED" | "PLAYING"
+ *   },
+ *   userBalance: number,  // FINAL balance after payout
+ *   timestamp: string
+ * }
+ */
+
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -290,35 +322,33 @@ export async function POST(request: NextRequest) {
         result = 'PUSH'
       }
 
-      // 💰 PAYOUT CALC (MODAL + PROFIT)
-      // Ingat: Modal (Bet) SUDAH diambil saat Start Game (/play).
-      // Jadi kita harus mengembalikan Modal + Profit.
+      // 💰 SMART PAYOUT CALCULATION (PREVENTS DOUBLE-DEDUCTION)
+      // CRITICAL: Bet was ALREADY deducted in /game/play route
+      // This settlement logic ONLY returns money to user (never deducts)
+      // We use MULTIPLIERS to calculate how much to return
 
-      // 1. Ambil Result & Bersihkan Formatnya (Jadi Huruf Besar & Tanpa Spasi)
-      // Ini akan mengubah "Win" -> "WIN", "Push" -> "PUSH", "LOSE" -> "LOSE"
+      // 1. Clean and normalize result string
       const rawResult = result || 'LOSE'
       const cleanResult = rawResult.toUpperCase().trim()
 
-      console.log(`🔍 RESULT CHECK: Asli='${rawResult}' | Dibaca='${cleanResult}'`)
+      console.log(`🔍 RESULT CHECK: Raw='${rawResult}' | Clean='${cleanResult}'`)
 
-      // 2. Pastikan Bet adalah Angka (Mencegah Error Decimal Prisma)
+      // 2. Ensure bet is a valid number (prevent Prisma Decimal errors)
       const betValue = Number(updatedGame.currentBet ?? game.currentBet) || 0
       betAmount = betValue
 
       let multiplier = 0
-      let balanceChange = 0 // IMPORTANT: Initialize to 0
 
-      // --- LOGIK PAYOUT (Sesuai JSON Anda) ---
+      // --- PAYOUT MULTIPLIER LOGIC ---
+      // BLACKJACK: Return 2.5x bet (original stake + 1.5x profit)
       if (cleanResult.includes('BLACKJACK')) {
         multiplier = 2.5
-        balanceChange = betValue * multiplier // Return 2.5x
       }
-      // KASUS 2: MENANG (WIN) - pakai .includes() jaga-jaga kalau tulisannya "PLAYER_WIN" / "SPLIT_WIN"
+      // WIN: Return 2.0x bet (original stake + 1x profit)
       else if (cleanResult === 'WIN' || cleanResult.includes('WIN')) {
         multiplier = 2.0
-        balanceChange = betValue * multiplier // Return 2x
       }
-      // KASUS 3: SERI (PUSH)
+      // PUSH/DRAW/TIE: Return 1.0x bet (refund original stake only)
       else if (
         cleanResult === 'PUSH' ||
         cleanResult === 'DRAW' ||
@@ -326,42 +356,51 @@ export async function POST(request: NextRequest) {
         cleanResult.includes('PUSH')
       ) {
         multiplier = 1.0
-        balanceChange = betValue * multiplier // Return 1x (stake only)
       }
-      // KASUS 4: SURRENDER
+      // SURRENDER: Return 0.5x bet (return half of stake)
       else if (cleanResult === 'SURRENDER' || cleanResult.includes('SURRENDER')) {
         multiplier = 0.5
-        balanceChange = betValue * multiplier // Return 0.5x (half stake)
       }
-      // KASUS 5: KALAH (LOSE)
-      // ⚠️ IMPORTANT: Bet was ALREADY deducted in /game/play
-      // We MUST NOT deduct again here
+      // LOSE: Return 0.0x bet (bet already taken, no refund)
+      // ⚠️ CRITICAL: We do NOT deduct again here!
       else {
         multiplier = 0.0
-        balanceChange = 0 // 0 = no additional change to balance
       }
 
-      // Calculate payout for record keeping
-      payout = betValue * multiplier
+      // Calculate payout amount (what user receives back)
+      payout = Math.floor(betValue * multiplier)
+      
+      // Calculate balance change (ALWAYS >= 0, we only ADD back money)
+      balanceChange = payout
+      
+      // Safeguard: Ensure balanceChange is never negative
+      if (balanceChange < 0) {
+        console.warn(`⚠️ CRITICAL: balanceChange was negative (${balanceChange}), forcing to 0`)
+        balanceChange = 0
+      }
 
       console.log(`💰 PAYOUT FINAL: Result=${cleanResult}, Bet=${betValue}, Multiplier=${multiplier}, PayoutAmount=${payout}, BalanceChange=${balanceChange}`)
 
       // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
+        console.warn('⚠️ CRITICAL: payout was NaN or Infinity, forcing to 0')
         payout = 0
         balanceChange = 0
       }
 
+      // Calculate net profit (profit = payout - original bet)
       netProfit = payout - betValue
       if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
+        console.warn('⚠️ CRITICAL: netProfit was NaN or Infinity, forcing to 0')
         netProfit = 0
       }
     }
 
     const isSettlement = finalGameState === 'ENDED'
 
-    // --- DATABASE UPDATE ---
+    // --- ATOMIC DATABASE UPDATE ---
     const [updatedGameRecord, updatedUser] = await db.$transaction([
+      // Update game state
       db.game.update({
         where: { id: gameId },
         data: {
@@ -383,7 +422,12 @@ export async function POST(request: NextRequest) {
             : {}),
         },
       }),
-      // ✅ UPDATE SALDO
+      // ✅ CRITICAL: Update user balance on settlement
+      // IMPORTANT: We use INCREMENT (never decrement) because:
+      // 1. Bet was already deducted in /game/play route
+      // 2. balanceChange is ALWAYS >= 0 (enforced by safeguard above)
+      // 3. We only RETURN money to user (payout = multiplier * bet)
+      // 4. This prevents double-deduction bug
       isSettlement
         ? db.user.update({
             where: { id: userId },
