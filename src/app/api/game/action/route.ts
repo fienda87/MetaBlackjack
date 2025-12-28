@@ -346,7 +346,7 @@ export async function POST(request: NextRequest) {
       isSettlement
         ? db.user.update({
             where: { id: userId },
-            data: { balance: { increment: payout } },
+            data: { balance: { increment: payout } },  // ✅ ATOMIC: Add full payout (includes original bet), since bet was already deducted in play.ts
             select: { balance: true },
           })
         : Promise.resolve(null)

@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
   
   try {
     const { userId, betAmount, moveType } = await request.json()
-
+    
     // Validate input
     if (!userId || !betAmount || !moveType) {
       return NextResponse.json(
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
+    
     // 🚀 CACHED: Get user with balance from cache first
     const userStrategy = CACHE_STRATEGIES.USER_BALANCE(userId)
     const user = await cacheGetOrFetch(
@@ -103,14 +103,14 @@ export async function POST(request: NextRequest) {
         })
       }
     )
-
+    
     if (!user) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       )
     }
-
+    
     // Check balance
     if (user.balance < betAmount) {
       return NextResponse.json(
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
+    
     // Create new game
     const deck = GameEngine.createDeck()
     const playerCards = [deck.pop()!, deck.pop()!]
@@ -127,22 +127,30 @@ export async function POST(request: NextRequest) {
     const playerHand = GameEngine.calculateHandValue(playerCards)
     const dealerHand = GameEngine.calculateHandValue([dealerCards[0]!])
     const fullDealerHand = GameEngine.calculateHandValue(dealerCards)
-
+    
     // Determine initial game state - only end if both have blackjack or dealer has blackjack
     let gameState: GameState = 'PLAYING'
     let result: any = null
     let netProfit = 0
+    let payout = 0
 
     if (playerHand.isBlackjack && fullDealerHand.isBlackjack) {
       gameState = 'ENDED'
       result = 'PUSH'
       netProfit = 0
+      payout = betAmount // Return original bet on push
     } else if (fullDealerHand.isBlackjack && !playerHand.isBlackjack) {
       gameState = 'ENDED'
       result = 'LOSE'
       netProfit = -betAmount
+      payout = 0
+    } else if (playerHand.isBlackjack && !fullDealerHand.isBlackjack) {
+      gameState = 'ENDED'
+      result = 'WIN'
+      netProfit = Math.floor(betAmount * 1.5) // Blackjack pays 3:2 (profit only)
+      payout = betAmount + netProfit // Total payout = original bet + profit
     }
-
+    
     // 🚀 PARALLEL: Get session and create game simultaneously (independent operations)
     const activeSession = await getOrCreateActiveSession(userId)
     
@@ -150,9 +158,20 @@ export async function POST(request: NextRequest) {
     // No manual balance calculation - use Prisma atomic operations
     let balanceChange = 0
     if (gameState === 'ENDED') {
-      balanceChange = netProfit  // Instant settlement: profit (+) or loss (-)
+      // Instant settlement cases
+      if (result === 'WIN') {
+        // Instant blackjack win: add the full payout (includes original bet)
+        balanceChange = payout
+      } else if (result === 'LOSE') {
+        // Dealer blackjack: deduct the bet
+        balanceChange = -betAmount
+      } else if (result === 'PUSH') {
+        // Push: no change (return original bet)
+        balanceChange = 0
+      }
     } else {
-      balanceChange = -betAmount  // Normal game: cut balance NOW
+      // Normal game: cut balance NOW
+      balanceChange = -betAmount
     }
 
     // Calculate balanceBefore for transaction logging
@@ -180,6 +199,7 @@ export async function POST(request: NextRequest) {
           },
           result,
           netProfit,
+          winAmount: payout,
           endedAt: gameState === 'ENDED' ? new Date() : null
         }
       }),
@@ -217,13 +237,13 @@ export async function POST(request: NextRequest) {
     db.transaction.create({
       data: {
         userId,
-        type: gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS') : 'GAME_BET',
-        amount: (gameState === 'ENDED' ? Math.abs(netProfit) : betAmount).toString(),
+        type: gameState === 'ENDED' ? (result === 'WIN' ? 'GAME_WIN' : result === 'LOSE' ? 'GAME_LOSS' : 'GAME_PUSH') : 'GAME_BET',
+        amount: gameState === 'ENDED' ? Math.abs(netProfit).toString() : betAmount.toString(),
         status: 'SUCCESS',
         balanceBefore,
         balanceAfter,
         referenceId: game.id,
-        description: `Game ${gameState === 'ENDED' ? (result === 'WIN' || result === 'BLACKJACK' ? 'WIN' : 'LOSS') : 'BET'}: ${betAmount} GBC`,
+        description: `Game ${gameState === 'ENDED' ? (result === 'WIN' ? 'WIN' : result === 'LOSE' ? 'LOSS' : 'PUSH') : 'BET'}: ${betAmount} GBC`,
       }
     }).catch(err => console.error('Transaction creation failed:', err))
 
