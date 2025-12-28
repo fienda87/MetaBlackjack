@@ -45,15 +45,6 @@ function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, b
     .catch((err: any) => console.error('Session stats update failed:', err))
 }
 
-// Auto-translator for legacy schema mappings
-function translateLegacyAction(action: string): string {
-  const actionMap: Record<string, string> = {
-    'insurance': 'INSURANCE_ACCEPT',
-    'set_ace_value': 'HIT' // Safe fallback for ace value selection
-  }
-  return actionMap[action] || action.toUpperCase()
-}
-
 export async function POST(request: NextRequest) {
   const perfLabel = 'game:action'
   perfMetrics.start(perfLabel)
@@ -371,19 +362,29 @@ export async function POST(request: NextRequest) {
       await cacheInvalidation.invalidateGameData(gameId, userId, 'game_action')
     }
 
-    // 🚀 FIRE-AND-FORGET: Game move logging (preserves originalAction)
+    // --- 1. Mapping Action Dulu ---
+    let dbMoveType = action.toUpperCase();
+
+    if (action === 'insurance') {
+      dbMoveType = 'INSURANCE_ACCEPT'; // Match schema enum
+    }
+    if (action === 'set_ace_value') {
+      dbMoveType = 'HIT'; // Fallback mapping
+    }
+
+    // --- 2. Simpan ke Database ---
     db.gameMove.create({
       data: {
         gameId,
-        moveType: translateLegacyAction(action),
+        moveType: dbMoveType as any, // ✅ FIX: 'as any' bypasses TypeScript enum check
         payload: {
+          originalAction: action, // Preserve original for audit trail
           playerCards,
           dealerCards: isSettlement ? dealerCards : [dealerCards[0]], // Hide dealer's hole card
           playerHandValue: newPlayerHand.value,
           dealerHandValue: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           currentBet: updatedGame.currentBet,
           insuranceBet: updatedGame.insuranceBet,
-          originalAction: action // Preserve original action for debugging
         }
       }
     }).catch(err => console.error('GameMove creation failed:', err))
