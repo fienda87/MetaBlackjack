@@ -745,6 +745,25 @@ const GameTable: React.FC = memo(() => {
         audio.playCardDealSound()
         // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately if API includes it
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // ✅ Refresh balance from database if game ended (bust or 21)
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          if (result?.userBalance !== undefined) {
+            console.log('✅ Game End Balance Update (WebSocket):', {
+              action: 'hit',
+              newBalance: result.userBalance,
+              gameState: result.game.state,
+              gameResult: result.game.result
+            })
+          }
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
@@ -771,6 +790,7 @@ const GameTable: React.FC = memo(() => {
             action: 'hit',
             gameId: currentGame.id
           })
+          dispatch(setLocalBalance(payload.userBalance))
           // Immediately refresh balance from database to ensure UI sync
           fetchGameBalanceImmediate()
         }
@@ -809,6 +829,25 @@ const GameTable: React.FC = memo(() => {
         )
         // Update Redux state with WebSocket result
         dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately if API includes it
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // ✅ Refresh balance from database when game ends (stand always ends)
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          if (result?.userBalance !== undefined) {
+            console.log('✅ Game End Balance Update (WebSocket):', {
+              action: 'stand',
+              newBalance: result.userBalance,
+              gameState: result.game.state,
+              gameResult: result.game.result
+            })
+          }
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error: any) {
         dispatch(setLoading(false))
@@ -835,6 +874,7 @@ const GameTable: React.FC = memo(() => {
             action: 'stand',
             gameId: currentGame.id
           })
+          dispatch(setLocalBalance(payload.userBalance))
           // Immediately refresh balance from database to ensure UI sync
           fetchGameBalanceImmediate()
         }
@@ -877,7 +917,26 @@ const GameTable: React.FC = memo(() => {
           'double_down'
         )
         // Update Redux state with WebSocket result
-        dispatch({ type: 'game/updateFromSocket', payload: result })
+        dispatch(updateFromSocket(result))
+
+        // ✅ Update Redux balance immediately if API includes it
+        if (result?.userBalance !== undefined) {
+          dispatch(setLocalBalance(result.userBalance))
+        }
+
+        // ✅ Refresh balance from database when game ends (double down always ends)
+        if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+          if (result?.userBalance !== undefined) {
+            console.log('✅ Game End Balance Update (WebSocket):', {
+              action: 'double_down',
+              newBalance: result.userBalance,
+              gameState: result.game.state,
+              gameResult: result.game.result
+            })
+          }
+          fetchGameBalanceImmediate()
+        }
+
         return result
       } catch (error) {
         // Fallback to HTTP API if WebSocket fails
@@ -896,6 +955,7 @@ const GameTable: React.FC = memo(() => {
             action: 'double_down',
             gameId: currentGame.id
           })
+          dispatch(setLocalBalance(payload.userBalance))
           // Immediately refresh balance from database to ensure UI sync
           fetchGameBalanceImmediate()
         }
@@ -925,7 +985,25 @@ const GameTable: React.FC = memo(() => {
         currentGame.id, 
         'insurance'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately if API includes it
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // ✅ Refresh balance from database if game ended
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        if (result?.userBalance !== undefined) {
+          console.log('✅ Game End Balance Update (WebSocket):', {
+            action: 'insurance',
+            newBalance: result.userBalance,
+            gameState: result.game.state,
+            gameResult: result.game.result
+          })
+        }
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
       const httpResult = await dispatch(makeGameAction({ 
@@ -942,6 +1020,7 @@ const GameTable: React.FC = memo(() => {
           action: 'insurance',
           gameId: currentGame.id
         })
+        dispatch(setLocalBalance(payload.userBalance))
         // Immediately refresh balance from database to ensure UI sync
         fetchGameBalanceImmediate()
       }
@@ -974,7 +1053,25 @@ const GameTable: React.FC = memo(() => {
         currentGame.id, 
         'split'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately if API includes it
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // ✅ Refresh balance from database if game ended
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        if (result?.userBalance !== undefined) {
+          console.log('✅ Game End Balance Update (WebSocket):', {
+            action: 'split',
+            newBalance: result.userBalance,
+            gameState: result.game.state,
+            gameResult: result.game.result
+          })
+        }
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
       const httpResult = await dispatch(makeGameAction({ 
@@ -991,6 +1088,7 @@ const GameTable: React.FC = memo(() => {
           action: 'split',
           gameId: currentGame.id
         })
+        dispatch(setLocalBalance(payload.userBalance))
         // Immediately refresh balance from database to ensure UI sync
         fetchGameBalanceImmediate()
       }
@@ -1017,7 +1115,25 @@ const GameTable: React.FC = memo(() => {
         currentGame.id, 
         'surrender'
       )
-      dispatch({ type: 'game/updateFromSocket', payload: result })
+      dispatch(updateFromSocket(result))
+
+      // ✅ Update Redux balance immediately if API includes it
+      if (result?.userBalance !== undefined) {
+        dispatch(setLocalBalance(result.userBalance))
+      }
+
+      // ✅ Refresh balance from database when game ends (surrender always ends)
+      if (String(result?.game?.state).toUpperCase() === 'ENDED') {
+        if (result?.userBalance !== undefined) {
+          console.log('✅ Game End Balance Update (WebSocket):', {
+            action: 'surrender',
+            newBalance: result.userBalance,
+            gameState: result.game.state,
+            gameResult: result.game.result
+          })
+        }
+        fetchGameBalanceImmediate()
+      }
     } catch (error) {
       console.warn('[GameTable] WebSocket failed, using HTTP fallback:', error)
       const httpResult = await dispatch(makeGameAction({ 
@@ -1034,6 +1150,7 @@ const GameTable: React.FC = memo(() => {
           action: 'surrender',
           gameId: currentGame.id
         })
+        dispatch(setLocalBalance(payload.userBalance))
         // Immediately refresh balance from database to ensure UI sync
         fetchGameBalanceImmediate()
       }
