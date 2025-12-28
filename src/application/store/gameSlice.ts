@@ -32,12 +32,21 @@ export const startNewGame = createAsyncThunk(
           moveType: 'deal'
         })
       })
-      
+
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to start new game')
+        const errorData = await response.json()
+
+        // Handle 409 Conflict - user already has an active game
+        if (response.status === 409 && errorData.game) {
+          return {
+            game: errorData.game,
+            userBalance: errorData.userBalance || 0
+          }
+        }
+
+        throw new Error(errorData.error || errorData.message || 'Failed to start new game')
       }
-      
+
       const data = await response.json()
       return {
         game: data.game,

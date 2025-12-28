@@ -89,7 +89,29 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    
+
+    // 🛡️ SECURITY CHECK: Prevent double game creation (race condition fix)
+    // Check if user already has an active PLAYING game
+    const existingGame = await db.game.findFirst({
+      where: {
+        playerId: userId,
+        state: "PLAYING",
+      },
+    });
+
+    // If user has an active game, reject the request
+    if (existingGame) {
+      console.log(`🚫 Blocked double game creation for user ${userId}`);
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Selesaikan game yang sedang berjalan dulu!",
+          game: existingGame // Return existing game for frontend to continue
+        },
+        { status: 409 } // 409 Conflict
+      );
+    }
+
     // 🚀 CACHED: Get user with balance from cache first
     const userStrategy = CACHE_STRATEGIES.USER_BALANCE(userId)
     const user = await cacheGetOrFetch(

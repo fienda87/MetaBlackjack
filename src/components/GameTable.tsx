@@ -664,8 +664,14 @@ const GameTable: React.FC = memo(() => {
   }, [])
 
   const handleDeal = useCallback(() => {
+    // Check if user already has an active game
+    if (currentGame && currentGame.state === 'PLAYING') {
+      console.warn('Cannot start new game: user already has an active game')
+      // You could show a toast notification here if desired
+      return
+    }
     setShowDealConfirmation(true)
-  }, [])
+  }, [currentGame])
 
   const handleConfirmDeal = useCallback(async () => {
     if (user && betAmount >= 1 && betAmount <= currentBalance) {
