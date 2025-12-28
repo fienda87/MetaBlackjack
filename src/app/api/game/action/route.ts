@@ -306,14 +306,17 @@ export async function POST(request: NextRequest) {
       betAmount = betValue
 
       let multiplier = 0
+      let balanceChange = 0 // IMPORTANT: Initialize to 0
 
       // --- LOGIK PAYOUT (Sesuai JSON Anda) ---
       if (cleanResult.includes('BLACKJACK')) {
         multiplier = 2.5
+        balanceChange = betValue * multiplier // Return 2.5x
       }
       // KASUS 2: MENANG (WIN) - pakai .includes() jaga-jaga kalau tulisannya "PLAYER_WIN" / "SPLIT_WIN"
       else if (cleanResult === 'WIN' || cleanResult.includes('WIN')) {
         multiplier = 2.0
+        balanceChange = betValue * multiplier // Return 2x
       }
       // KASUS 3: SERI (PUSH)
       else if (
@@ -323,21 +326,25 @@ export async function POST(request: NextRequest) {
         cleanResult.includes('PUSH')
       ) {
         multiplier = 1.0
+        balanceChange = betValue * multiplier // Return 1x (stake only)
       }
       // KASUS 4: SURRENDER
       else if (cleanResult === 'SURRENDER' || cleanResult.includes('SURRENDER')) {
         multiplier = 0.5
+        balanceChange = betValue * multiplier // Return 0.5x (half stake)
       }
       // KASUS 5: KALAH (LOSE)
+      // ⚠️ IMPORTANT: Bet was ALREADY deducted in /game/play
+      // We MUST NOT deduct again here
       else {
         multiplier = 0.0
+        balanceChange = 0 // 0 = no additional change to balance
       }
 
-      // 3. Hitung Total Uang yang Kembali ke User
+      // Calculate payout for record keeping
       payout = betValue * multiplier
-      balanceChange = payout
 
-      console.log(`💰 PAYOUT: Status=${cleanResult}, Bet=${betValue}, Pay=${payout}`)
+      console.log(`💰 PAYOUT FINAL: Result=${cleanResult}, Bet=${betValue}, Multiplier=${multiplier}, PayoutAmount=${payout}, BalanceChange=${balanceChange}`)
 
       // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
