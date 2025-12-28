@@ -3,340 +3,234 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { GameEngine } from '@/domain/usecases/GameEngine'
-import { GameState } from '@/domain/entities/Game'
-import { executeParallel, USER_SELECT, GAME_SELECT, getSafeLimit } from '@/lib/query-helpers'
-import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
+import { perfMetrics } from '@/lib/performance-monitor'
 import { cacheInvalidation } from '@/lib/cache-invalidation'
-import { perfMetrics, trackApiEndpoint } from '@/lib/performance-monitor'
-
-// 🚀 OPTIMIZED: Get or create active session with single query
-async function getOrCreateActiveSession(userId: string) {
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
-  
-  // Try to find active session first (faster than upsert for existing sessions)
-  const activeSession = await db.gameSession.findFirst({
-    where: {
-      playerId: userId,
-      endTime: null,
-      startTime: { gte: twoHoursAgo }
-    },
-    select: { id: true, totalGames: true, totalBet: true, totalWin: true, netProfit: true, stats: true },
-    orderBy: { startTime: 'desc' }
-  })
-  
-  if (activeSession) return activeSession
-  
-  // Create new session only if not found
-  return await db.gameSession.create({
-    data: {
-      playerId: userId,
-      totalGames: 0,
-      totalBet: 0,
-      totalWin: 0,
-      netProfit: 0,
-      stats: { wins: 0, losses: 0, pushes: 0, blackjacks: 0, busts: 0, totalHands: 0 }
-    },
-    select: { id: true, totalGames: true, totalBet: true, totalWin: true, netProfit: true, stats: true }
-  })
-}
-
-// 🚀 FIRE-AND-FORGET: Update session stats without blocking response
-function updateSessionStatsAsync(sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
-  // Don't await - fire and forget for performance
-  db.gameSession.findUnique({ where: { id: sessionId } })
-    .then(session => {
-      if (!session) return
-      
-      const stats = session.stats as any
-      const result = gameResult.result?.toLowerCase() || 'push'
-      
-      // Update stats incrementally
-      if (result === 'win') stats.wins = (stats.wins || 0) + 1
-      else if (result === 'lose') stats.losses = (stats.losses || 0) + 1
-      else if (result === 'push') stats.pushes = (stats.pushes || 0) + 1
-      else if (result === 'blackjack') {
-        stats.blackjacks = (stats.blackjacks || 0) + 1
-        stats.wins = (stats.wins || 0) + 1
-      }
-      
-      stats.totalHands = (stats.totalHands || 0) + 1
-      
-      return db.gameSession.update({
-        where: { id: sessionId },
-        data: {
-          totalGames: session.totalGames + 1,
-          totalBet: session.totalBet + betAmount,
-          totalWin: netProfit > 0 ? session.totalWin + (betAmount + netProfit) : session.totalWin,
-          netProfit: session.netProfit + netProfit,
-          stats
-        }
-      })
-    })
-    .catch(err => console.error('Session stats update failed:', err))
-}
 
 export async function POST(request: NextRequest) {
   const perfLabel = 'game:play'
   perfMetrics.start(perfLabel)
   
   try {
-    const { userId, betAmount, moveType } = await request.json()
+    const { userId, betAmount } = await request.json()
     
-    // Validate input
-    if (!userId || !betAmount || !moveType) {
-      return NextResponse.json(
-        { error: 'Missing required fields: userId, betAmount, moveType' },
-        { status: 400 }
-      )
+    if (!userId || !betAmount) {
+      return NextResponse.json({ error: 'Missing data' }, { status: 400 })
     }
 
-    // 🛡️ SECURITY LAYER 1: TIME-GATE (Prevent race condition from rapid requests)
-    // Check when last game was created to enforce 3-second cooldown
-    const lastGame = await db.game.findFirst({
-      where: { playerId: userId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true, state: true }
-    })
+    // 🔥 ATOMIC TRANSACTION WITH DATABASE LOCK
+    // Semua operasi dalam blok ini adalah "satu kesatuan"
+    const result = await db.$transaction(async (tx) => {
+      
+      // ---------------------------------------------------------
+      // 🔒 STEP 1: LOCK USER & DEDUCT BALANCE IMMEDIATELY
+      // ---------------------------------------------------------
+      // Dengan melakukan update di awal, request lain akan MENUNGGU
+      // sampai transaksi ini selesai. Ini adalah database-level locking.
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) throw new Error("User not found");
+      if (user.balance < betAmount) throw new Error("Insufficient balance");
 
-    if (lastGame) {
-      const now = Date.now()
-      const lastGameTime = new Date(lastGame.createdAt).getTime()
-      const timeDiff = now - lastGameTime
+      // CRITICAL: Deduct balance FIRST
+      // This locks the user row in database
+      await tx.user.update({
+        where: { id: userId },
+        data: { balance: { decrement: betAmount } }
+      });
 
-      // REJECT if less than 3 seconds (3000ms) have passed
-      // This prevents double-deduction from rapid clicks, network lag, or double-submit
-      if (timeDiff < 3000) {
-        console.log(`🚫 TIME-GATE BLOCKED: User ${userId} request too fast (${timeDiff}ms since last game)`)
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Too fast! Please wait a moment before starting a new game.",
-            game: lastGame, // Return last game so UI can handle gracefully
-            cooldownRemaining: Math.ceil((3000 - timeDiff) / 1000) // Seconds remaining
-          },
-          { status: 429 } // 429 Too Many Requests
-        )
+      console.log(`[PLAY_LOCK] User ${userId}: Balance locked, bet ${betAmount} deducted`);
+
+      // ---------------------------------------------------------
+      // 🛡️ STEP 2: CHECK GAME ACTIVE & TIME GATE (Now Safe)
+      // ---------------------------------------------------------
+      
+      const existingGame = await tx.game.findFirst({
+        where: { playerId: userId, state: "PLAYING" }
+      });
+
+      if (existingGame) {
+        // If error, transaction rolls back and balance is automatically refunded
+        throw new Error("GAME_ALREADY_ACTIVE");
       }
-    }
 
-    // 🛡️ SECURITY LAYER 2: Active Game Check (Backup protection)
-    // Check if user already has an active PLAYING game
-    const existingGame = await db.game.findFirst({
-      where: {
-        playerId: userId,
-        state: "PLAYING",
-      },
-    });
+      const lastGame = await tx.game.findFirst({
+        where: { playerId: userId },
+        orderBy: { createdAt: 'desc' }
+      });
 
-    // If user has an active game, reject the request
-    if (existingGame) {
-      console.log(`🚫 Blocked double game creation for user ${userId}`);
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Selesaikan game yang sedang berjalan dulu!",
-          game: existingGame // Return existing game for frontend to continue
-        },
-        { status: 409 } // 409 Conflict
-      );
-    }
+      if (lastGame) {
+        const diff = Date.now() - new Date(lastGame.createdAt).getTime();
+        if (diff < 3000) {
+           throw new Error("TOO_FAST");
+        }
+      }
 
-    // 🚀 CACHED: Get user with balance from cache first
-    const userStrategy = CACHE_STRATEGIES.USER_BALANCE(userId)
-    const user = await cacheGetOrFetch(
-      userStrategy.key,
-      userStrategy,
-      async () => {
-        // 🚀 OPTIMIZED: Only fetch essential fields
-        return await db.user.findUnique({
+      // ---------------------------------------------------------
+      // 🃏 STEP 3: GAME LOGIC
+      // ---------------------------------------------------------
+      const deck = GameEngine.createDeck()
+      const playerCards = [deck.pop()!, deck.pop()!]
+      const dealerCards = [deck.pop()!, deck.pop()!]
+      
+      const playerHand = GameEngine.calculateHandValue(playerCards)
+      const fullDealerHand = GameEngine.calculateHandValue(dealerCards)
+      const dealerVisibleHand = GameEngine.calculateHandValue([dealerCards[0]!])
+
+      let gameState = 'PLAYING'
+      let result = null
+      let payout = 0
+      let netProfit = 0
+
+      // Handle Instant Blackjack Cases
+      if (playerHand.isBlackjack && fullDealerHand.isBlackjack) {
+        gameState = 'ENDED'
+        result = 'PUSH'
+        payout = betAmount // Return stake only
+        netProfit = 0
+      } else if (fullDealerHand.isBlackjack && !playerHand.isBlackjack) {
+        gameState = 'ENDED'
+        result = 'LOSE'
+        payout = 0 
+        netProfit = -betAmount
+      } else if (playerHand.isBlackjack && !fullDealerHand.isBlackjack) {
+        gameState = 'ENDED'
+        result = 'WIN'
+        // Player blackjack pays 2.5x (stake + 1.5x profit)
+        netProfit = Math.floor(betAmount * 1.5) 
+        payout = betAmount + netProfit 
+      }
+
+      // ---------------------------------------------------------
+      // 💰 STEP 4: IMMEDIATE SETTLEMENT IF GAME ENDED
+      // ---------------------------------------------------------
+      if (gameState === 'ENDED' && payout > 0) {
+        // Balance already deducted in STEP 1
+        // Now add back the payout (stake + profit)
+        await tx.user.update({
           where: { id: userId },
-          select: USER_SELECT.MINIMAL
-        })
+          data: { balance: { increment: payout } }
+        });
+
+        console.log(`[PLAY_SETTLE] Game ID: (new), Result: ${result}, Payout: ${payout}`);
       }
-    )
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
-    }
-    
-    // Check balance
-    if (user.balance < betAmount) {
-      return NextResponse.json(
-        { error: 'Insufficient balance' },
-        { status: 400 }
-      )
-    }
-    
-    // Create new game
-    const deck = GameEngine.createDeck()
-    const playerCards = [deck.pop()!, deck.pop()!]
-    const dealerCards = [deck.pop()!, deck.pop()!]
-    
-    const playerHand = GameEngine.calculateHandValue(playerCards)
-    const dealerHand = GameEngine.calculateHandValue([dealerCards[0]!])
-    const fullDealerHand = GameEngine.calculateHandValue(dealerCards)
-    
-    // Determine initial game state - only end if both have blackjack or dealer has blackjack
-    let gameState: GameState = 'PLAYING'
-    let result: any = null
-    let netProfit = 0
-    let payout = 0
 
-    if (playerHand.isBlackjack && fullDealerHand.isBlackjack) {
-      gameState = 'ENDED'
-      result = 'PUSH'
-      netProfit = 0
-      payout = betAmount // Return original bet on push
-    } else if (fullDealerHand.isBlackjack && !playerHand.isBlackjack) {
-      gameState = 'ENDED'
-      result = 'LOSE'
-      netProfit = -betAmount
-      payout = 0
-    } else if (playerHand.isBlackjack && !fullDealerHand.isBlackjack) {
-      gameState = 'ENDED'
-      result = 'WIN'
-      netProfit = Math.floor(betAmount * 1.5) // Blackjack pays 3:2 (profit only)
-      payout = betAmount + netProfit // Total payout = original bet + profit
-    }
-    
-    // 🚀 PARALLEL: Get session and create game simultaneously (independent operations)
-    const activeSession = await getOrCreateActiveSession(userId)
-    
-    // 🚀 ATOMIC: Calculate balance change (negative = decrease, positive = increase)
-    // No manual balance calculation - use Prisma atomic operations
-    let balanceChange = 0
-    if (gameState === 'ENDED') {
-      // Instant settlement cases
-      if (result === 'WIN') {
-        // Instant blackjack win: add the full payout (includes original bet)
-        balanceChange = payout
-      } else if (result === 'LOSE') {
-        // Dealer blackjack: deduct the bet
-        balanceChange = -betAmount
-      } else if (result === 'PUSH') {
-        // Push: no change (return original bet)
-        balanceChange = 0
+      // ---------------------------------------------------------
+      // 💾 STEP 5: SAVE GAME TO DATABASE
+      // ---------------------------------------------------------
+      let session = await tx.gameSession.findFirst({
+         where: { playerId: userId, endTime: null },
+         orderBy: { startTime: 'desc' }
+      });
+      
+      if (!session) {
+         session = await tx.gameSession.create({
+             data: { 
+                 playerId: userId, 
+                 totalGames: 0, 
+                 totalBet: 0, 
+                 totalWin: 0, 
+                 netProfit: 0, 
+                 stats: {} 
+             }
+         });
       }
-    } else {
-      // Normal game: cut balance NOW
-      balanceChange = -betAmount
-    }
 
-    // Calculate balanceBefore for transaction logging
-    const balanceBefore = user.balance
-
-    // 🚀 PARALLEL: Create game and update user balance with ATOMIC operation
-    const [game, updatedUser] = await executeParallel(
-      db.game.create({
+      const newGame = await tx.game.create({
         data: {
           playerId: userId,
-          sessionId: activeSession.id,
+          sessionId: session.id,
           betAmount,
           currentBet: betAmount,
-          state: gameState,
-          playerHand: playerHand as any,
-          dealerHand: fullDealerHand as any,
-          deck: deck as any,
-          gameStats: {
-            wins: 0,
-            losses: 0,
-            pushes: 0,
-            blackjacks: playerHand.isBlackjack ? 1 : 0,
-            busts: 0,
-            totalHands: 1
-          },
-          result,
+          state: gameState as any,
+          result: result as any,
           netProfit,
           winAmount: payout,
+          playerHand: { ...playerHand, cards: playerCards },
+          dealerHand: { ...fullDealerHand, cards: dealerCards },
+          deck: deck as any,
+          gameStats: { 
+              totalHands: 1, 
+              blackjacks: playerHand.isBlackjack ? 1 : 0 
+          },
           endedAt: gameState === 'ENDED' ? new Date() : null
         }
-      }),
-      db.user.update({
-        where: { id: userId },
-        data: { balance: { increment: balanceChange } }  // ✅ ATOMIC - RACE CONDITION IMPOSSIBLE
-      })
-    )
+      });
 
-    // Calculate actual balanceAfter from the atomic update
-    const balanceAfter = balanceBefore + balanceChange
+      await tx.gameSession.update({
+          where: { id: session.id },
+          data: {
+              totalGames: { increment: 1 },
+              totalBet: { increment: betAmount }
+          }
+      });
 
-    // 🚀 SMART CACHE INVALIDATION: Update cache after mutations
-    if (gameState === 'ENDED') {
-      await cacheInvalidation.invalidateOnGameEnd(game.id, userId, result || 'ENDED')
+      // Get final balance for response
+      const finalUser = await tx.user.findUnique({ where: { id: userId } });
+      
+      return {
+        game: newGame,
+        userBalance: finalUser?.balance || 0,
+        dealerVisibleHand
+      };
+
+    }, {
+      maxWait: 5000, // Wait max 5 seconds for lock
+      timeout: 10000 // Process max 10 seconds
+    });
+
+    // 🚀 CACHE INVALIDATION (Outside Transaction)
+    if (result.game.state === 'ENDED') {
+        await cacheInvalidation.invalidateOnGameEnd(result.game.id, userId, result.game.result || 'ENDED')
     } else {
-      await cacheInvalidation.invalidateGameData(game.id, userId, 'game_started')
+        await cacheInvalidation.invalidateGameData(result.game.id, userId, 'game_started')
     }
 
-    // 🚀 FIRE-AND-FORGET: Create move and transaction records (non-critical for game flow)
-    db.gameMove.create({
-      data: {
-        gameId: game.id,
-        moveType: 'DEAL',
-        payload: {
-          betAmount,
-          playerCards,
-          dealerCards: [dealerCards[0]],
-          playerHandValue: playerHand.value,
-          dealerHandValue: dealerHand.value
-        } as any
-      }
-    }).catch(err => console.error('GameMove creation failed:', err))
+    // Format response - Hide dealer hole card if game still playing
+    const gameResponse = {
+        ...result.game,
+        dealerHand: result.game.state === 'ENDED' 
+            ? result.game.dealerHand 
+            : { 
+                cards: [ (result.game.dealerHand as any).cards[0] ],
+                value: result.dealerVisibleHand.value,
+                isBust: false, 
+                isBlackjack: false 
+              }
+    };
 
-    db.transaction.create({
-      data: {
-        userId,
-        type: gameState === 'ENDED' ? (result === 'WIN' ? 'GAME_WIN' : result === 'LOSE' ? 'GAME_LOSS' : 'GAME_PUSH') : 'GAME_BET',
-        amount: gameState === 'ENDED' ? Math.abs(netProfit).toString() : betAmount.toString(),
-        status: 'SUCCESS',
-        balanceBefore,
-        balanceAfter,
-        referenceId: game.id,
-        description: `Game ${gameState === 'ENDED' ? (result === 'WIN' ? 'WIN' : result === 'LOSE' ? 'LOSS' : 'PUSH') : 'BET'}: ${betAmount} GBC`,
-      }
-    }).catch(err => console.error('Transaction creation failed:', err))
-
-    // 🚀 FIRE-AND-FORGET: Update session stats
-    if (gameState === 'ENDED') {
-      updateSessionStatsAsync(activeSession.id, { result }, betAmount, netProfit)
-    }
-
-    // Return game state
     return NextResponse.json({
       success: true,
-      game: {
-        id: game.id,
-        playerId: game.playerId,
-        betAmount: game.betAmount,
-        currentBet: game.currentBet,
-        state: game.state,
-        playerHand: {
-          ...playerHand,
-          cards: playerHand.cards
-        },
-        dealerHand: {
-          cards: gameState === 'ENDED' ? fullDealerHand.cards : [dealerCards[0]], // Hide second card if game not ended
-          value: gameState === 'ENDED' ? fullDealerHand.value : dealerHand.value,
-          isBust: fullDealerHand.isBust,
-          isBlackjack: fullDealerHand.isBlackjack
-        },
-        result: game.result,
-        netProfit: game.netProfit,
-        createdAt: game.createdAt
-      },
-      userBalance: balanceAfter, // Use calculated balanceAfter from atomic operation
+      game: gameResponse,
+      userBalance: result.userBalance,
       timestamp: new Date().toISOString()
     })
 
-  } catch (error) {
-    console.error('New game error:', error)
+  } catch (error: any) {
+    console.error('[PLAY_ERROR]', error.message)
+
+    // Handle specific race condition errors
+    if (error.message === "GAME_ALREADY_ACTIVE") {
+        console.log('[BLOCKED] Game already active - balance auto-refunded');
+        return NextResponse.json({ 
+            success: false, 
+            message: "Selesaikan game yang sedang berjalan dulu!" 
+        }, { status: 409 });
+    }
+
+    if (error.message === "TOO_FAST") {
+        console.log('[BLOCKED] Too fast request - balance auto-refunded');
+        return NextResponse.json({ 
+            success: false, 
+            message: "Terlalu cepat! Tunggu sebentar." 
+        }, { status: 429 });
+    }
+
+    if (error.message === "Insufficient balance") {
+        console.log('[BLOCKED] Insufficient balance');
+        return NextResponse.json({ error: 'Saldo tidak cukup' }, { status: 400 });
+    }
+
     return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Internal server error', details: error.message },
       { status: 500 }
     )
   } finally {
