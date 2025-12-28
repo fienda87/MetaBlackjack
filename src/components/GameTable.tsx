@@ -686,9 +686,13 @@ const GameTable: React.FC = memo(() => {
         // ✅ STEP B: FORCE UI UPDATE from API response
         if (result && result.userBalance !== undefined) {
             console.log("⚡ FORCING UI Balance Update to:", result.userBalance);
-            
-            // This directly updates Redux state & UI component
+
+            // This directly updates Redux state
             dispatch(setLocalBalance(result.userBalance));
+
+            // ✅ Refresh hook's state from database to update UI immediately
+            // The hook has its own cached state that needs to be refreshed
+            fetchGameBalanceImmediate();
         }
 
         // Play card dealing sounds with delay
@@ -708,7 +712,7 @@ const GameTable: React.FC = memo(() => {
         }, 2000) // Reset dealing state after animation
       }
     }
-  }, [user, betAmount, currentBalance, dispatch, audio])
+  }, [user, betAmount, currentBalance, dispatch, audio, fetchGameBalanceImmediate])
 
   const handleCancelDeal = useCallback(() => {
     setShowDealConfirmation(false)
