@@ -223,8 +223,13 @@ export const setupSocket = (io: Server) => {
         let deck = [...(game.deck as any[])];
         let finalGameState: 'PLAYING' | 'ENDED' = game.state;
         let result: string | null = null;
+
+        // Total payout (stake + profit) that should be added back to balance.
+        // User balance is already ex-bet (bet deducted at game start).
+        let payout = 0;
+        // Net profit is stored for stats/records only (can be negative on losses).
         let netProfit = 0;
-        let winAmount = 0;
+
         let currentBet = game.currentBet;
 
         switch (data.action) {
@@ -264,6 +269,7 @@ export const setupSocket = (io: Server) => {
               data: { balance: user.balance - currentBet }
             });
 
+            // Keep the in-memory balance aligned with DB (balance is ex-bet).
             user.balance -= currentBet;
 
             const doubleCard = deck.pop();
@@ -283,6 +289,7 @@ export const setupSocket = (io: Server) => {
             }
             break;
           }
+
         }
 
         const newPlayerHand = GameEngine.calculateHandValue(playerCards);
@@ -293,8 +300,10 @@ export const setupSocket = (io: Server) => {
         if (playerBust) {
           finalGameState = 'ENDED';
           result = 'LOSE';
+
+          // Lose = no payout returned (bet already deducted at game start)
+          payout = 0;
           netProfit = -currentBet;
-          winAmount = 0;
         } else if (data.action === 'stand' || (data.action === 'double_down' && !newPlayerHand.isBust)) {
           finalGameState = 'ENDED';
 
@@ -318,8 +327,10 @@ export const setupSocket = (io: Server) => {
           );
 
           result = gameResult.result.toUpperCase();
+
+          // calculateGameResult.winAmount is TOTAL payout (stake + profit)
+          payout = gameResult.winAmount;
           netProfit = gameResult.winAmount - currentBet;
-          winAmount = gameResult.winAmount;
         }
 
         const playerHandJson = {
@@ -338,7 +349,7 @@ export const setupSocket = (io: Server) => {
           isSplittable: false
         };
 
-        const newBalance = finalGameState === 'ENDED' ? user.balance + winAmount : user.balance;
+        const newBalance = finalGameState === 'ENDED' ? user.balance + payout : user.balance;
 
         await Promise.all([
           db.game.update({
@@ -350,8 +361,8 @@ export const setupSocket = (io: Server) => {
               currentBet,
               state: finalGameState as any,
               result: result as any,
-              winAmount: finalGameState === 'ENDED' ? winAmount : null,
-              netProfit,
+              winAmount: finalGameState === 'ENDED' ? payout : null,
+              netProfit: finalGameState === 'ENDED' ? netProfit : null,
               endedAt: finalGameState === 'ENDED' ? new Date() : null
             }
           }),
