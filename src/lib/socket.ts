@@ -361,8 +361,8 @@ export const setupSocket = (io: Server) => {
               currentBet,
               state: finalGameState as any,
               result: result as any,
-              winAmount: finalGameState === 'ENDED' ? payout : null,
-              netProfit: finalGameState === 'ENDED' ? netProfit : null,
+              netProfit,
+              winAmount: finalGameState === 'ENDED' ? payout : undefined,
               endedAt: finalGameState === 'ENDED' ? new Date() : null
             }
           }),
@@ -384,7 +384,7 @@ export const setupSocket = (io: Server) => {
                 description: `Game ${result?.toLowerCase()} - Blackjack`,
                 balanceBefore: user.balance,
                 balanceAfter: newBalance,
-                status: 'COMPLETED',
+                status: 'SUCCESS',
                 referenceId: data.gameId
               }
             })
@@ -411,11 +411,11 @@ export const setupSocket = (io: Server) => {
             },
             result,
             netProfit,
-            createdAt: game.createdAt
-          },
-          userBalance: newBalance,
-          processingTime: Date.now() - startTime,
-          timestamp: Date.now()
+            createdAt: game.createdAt,
+            userBalance: newBalance,
+            processingTime: Date.now() - startTime,
+            timestamp: Date.now()
+          }
         });
       } catch (error) {
         logger.error('Game Action Error:', error);
