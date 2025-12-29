@@ -36,11 +36,9 @@ interface BalanceUpdate {
 }
 
 export const setupSocket = (io: Server) => {
-  // Store active games and player states
   const activeGames = new Map<string, GameState>();
   const playerBalances = new Map<string, number>();
 
-  // Connection error handling
   io.engine.on('connection_error', (err) => {
     logger.error('Connection error', { code: err.code, message: err.message });
   });
@@ -48,21 +46,18 @@ export const setupSocket = (io: Server) => {
   io.on('connection', (socket) => {
     logger.info('Player connected', socket.id);
 
-    // Heartbeat monitoring
     let heartbeatInterval: NodeJS.Timeout;
 
     socket.on('heartbeat', () => {
       socket.emit('heartbeat-ack');
     });
 
-    // Auto-cleanup check
     heartbeatInterval = setInterval(() => {
       if (!socket.connected) {
         clearInterval(heartbeatInterval);
       }
     }, 30000);
 
-    // Initialize player session
     socket.on('player:init', (data: { playerId: string; initialBalance: number }) => {
       playerBalances.set(data.playerId, data.initialBalance);
 
@@ -73,7 +68,6 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // Save game state to server
     socket.on('game:save', (gameState: GameState) => {
       activeGames.set(gameState.playerId, {
         ...gameState,
@@ -86,7 +80,6 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // Restore game state
     socket.on('game:restore', (data: { playerId: string }) => {
       const savedGame = activeGames.get(data.playerId);
       if (savedGame) {
@@ -98,12 +91,10 @@ export const setupSocket = (io: Server) => {
       }
     });
 
-    // Update player balance
     socket.on('balance:update', (data: BalanceUpdate) => {
       const currentBalance = playerBalances.get(data.playerId) || 0;
       const newBalance = currentBalance + data.amount;
 
-      // Validate balance update
       if (newBalance >= 0) {
         playerBalances.set(data.playerId, newBalance);
 
@@ -124,7 +115,6 @@ export const setupSocket = (io: Server) => {
       }
     });
 
-    // Validate game result
     socket.on('game:validate', (data: {
       playerId: string;
       playerHand: string[];
@@ -132,7 +122,6 @@ export const setupSocket = (io: Server) => {
       result: 'win' | 'lose' | 'push';
       bet: number;
     }) => {
-      // Basic validation logic
       const playerScore = calculateScore(data.playerHand);
       const dealerScore = calculateScore(data.dealerHand);
 
@@ -160,7 +149,6 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // Get current balance
     socket.on('balance:get', (data: { playerId: string }) => {
       const balance = playerBalances.get(data.playerId) || 0;
       socket.emit('balance:current', {
@@ -170,12 +158,10 @@ export const setupSocket = (io: Server) => {
       });
     });
 
-    // 🚀 ULTRA-OPTIMIZED: Real-time game action handler
     socket.on('game:action', async (data: GameActionRequest) => {
       const startTime = Date.now();
 
       try {
-        // 🚀 SKIP rate limiting in development for speed
         const isDev = process.env.NODE_ENV === 'development';
         if (!isDev) {
           const rateLimit = await checkRateLimit(`game:${data.userId}`, 30, 60);
@@ -185,8 +171,6 @@ export const setupSocket = (io: Server) => {
           }
         }
 
-        // 🚀 SKIP cache completely - direct DB query is faster with proper indexes
-        // Cache adds latency and complexity for real-time actions
         const [game, user] = await Promise.all([
           db.game.findUnique({
             where: { id: data.gameId },
@@ -209,7 +193,6 @@ export const setupSocket = (io: Server) => {
           })
         ]);
 
-        // 🚀 Fast validation
         if (!game || !user) {
           socket.emit('game:error', { error: 'Game or user not found' });
           return;
@@ -223,7 +206,6 @@ export const setupSocket = (io: Server) => {
           return;
         }
 
-        // Process action (in-memory, fast)
         let playerCards = [...(game.playerHand as any).cards];
         let dealerCards = [...(game.dealerHand as any).cards];
         let deck = [...game.deck as any[]];
@@ -261,7 +243,6 @@ export const setupSocket = (io: Server) => {
               return;
             }
 
-            // Deduct additional bet
             await db.user.update({
               where: { id: data.userId },
               data: { balance: user.balance - game.currentBet }
@@ -275,7 +256,6 @@ export const setupSocket = (io: Server) => {
             playerCards.push(doubleCard);
             game.currentBet = game.currentBet * 2;
 
-            // Auto stand after double down
             let ddDealerHand = GameEngine.calculateHandValue(dealerCards);
             while (ddDealerHand.value < 17 && deck.length > 0) {
               const card = deck.pop();
@@ -286,11 +266,9 @@ export const setupSocket = (io: Server) => {
             break;
         }
 
-        // Calculate new hands
         const newPlayerHand = GameEngine.calculateHandValue(playerCards);
         const newDealerHand = GameEngine.calculateHandValue(dealerCards);
 
-        // Check if game ended
         const playerBust = newPlayerHand.isBust;
         let payout = 0;
 
@@ -302,7 +280,6 @@ export const setupSocket = (io: Server) => {
         } else if (data.action === 'stand' || (data.action === 'double_down' && !newPlayerHand.isBust)) {
           finalGameState = 'ENDED';
 
-          // Ensure isSplittable is defined for calculateGameResult
           const playerHandForCalc = {
             ...newPlayerHand,
             isSplittable: newPlayerHand.isSplittable ?? false
@@ -326,7 +303,6 @@ export const setupSocket = (io: Server) => {
           netProfit = payout - game.currentBet;
         }
 
-        // 🚀 Prepare serializable hand objects
         const playerHandJson = {
           cards: newPlayerHand.cards,
           value: newPlayerHand.value,
@@ -343,16 +319,11 @@ export const setupSocket = (io: Server) => {
           isSplittable: false
         };
 
-        // 🚀 Calculate new balance: Add PAYOUT to current balance (which is ex-bet)
+        // Balance calculation: add payout to current balance (which is already ex-bet from game start)
         const currentBalanceVal = Number(user.balance);
         const payoutVal = Number(payout);
         const newBalance = finalGameState === 'ENDED' ? currentBalanceVal + payoutVal : currentBalanceVal;
 
-        console.log(`[SOCKET_DEBUG_FINAL] GameId=${data.gameId} Result=${result}`);
-        console.log(`[SOCKET_DEBUG_FINAL] Bet=${game.currentBet} Payout=${payoutVal} NetProfit=${netProfit}`);
-        console.log(`[SOCKET_DEBUG_FINAL] Balance Update: ${currentBalanceVal} + ${payoutVal} = ${newBalance}`);
-
-        // 🚀 PARALLEL: Update game and balance simultaneously (critical)
         await Promise.all([
           db.game.update({
             where: { id: data.gameId },
@@ -374,23 +345,21 @@ export const setupSocket = (io: Server) => {
           }) : Promise.resolve()
         ]);
 
-        // 🚀 FIRE-AND-FORGET: Transaction record (non-critical)
         if (finalGameState === 'ENDED') {
           db.transaction.create({
             data: {
               userId: data.userId,
               type: result === 'WIN' || result === 'BLACKJACK' ? 'GAME_WIN' : 'GAME_LOSS',
-              amount: Math.abs(netProfit).toString(), // Convert to string
+              amount: Math.abs(netProfit).toString(),
               description: `Game ${result?.toLowerCase()} - Blackjack`,
               balanceBefore: user.balance,
               balanceAfter: newBalance,
-              status: 'SUCCESS', // Changed from COMPLETED to SUCCESS
+              status: 'SUCCESS',
               referenceId: data.gameId
             }
           }).catch(err => logger.error('[SOCKET] Transaction creation failed', err));
         }
 
-        // 🚀 Send instant response
         socket.emit('game:updated', {
           success: true,
           game: {
@@ -423,23 +392,20 @@ export const setupSocket = (io: Server) => {
       }
     });
 
-    // Handle disconnect
     socket.on('disconnect', () => {
       clearInterval(heartbeatInterval);
       logger.info('Player disconnected', socket.id);
-      // Keep game state in memory for potential reconnection
     });
   });
 };
 
-// Helper function to calculate blackjack score
 function calculateScore(hand: string[]): number {
   let score = 0;
   let aces = 0;
 
   for (const card of hand) {
     const value = card.split('-')[0];
-    if (!value) continue; // Skip invalid cards
+    if (!value) continue;
     if (value === 'A') {
       aces++;
       score += 11;
@@ -458,10 +424,6 @@ function calculateScore(hand: string[]): number {
   return score;
 }
 
-/**
- * Emit blockchain balance update to client
- * Called after deposit/withdraw/faucet transactions confirmed
- */
 export function emitBalanceUpdate(
   io: Server,
   walletAddress: string,
@@ -469,7 +431,6 @@ export function emitBalanceUpdate(
   amount: string,
   txHash: string
 ) {
-  // Emit to all connected clients with this wallet address
   io.emit('blockchain:balance-updated', {
     walletAddress,
     type,
@@ -481,10 +442,6 @@ export function emitBalanceUpdate(
   logger.info('Emitted balance update', { walletAddress, type, amount })
 }
 
-/**
- * Emit game balance update (off-chain)
- * Called after deposit adds to game balance or withdraw reduces it
- */
 export function emitGameBalanceUpdate(
   io: Server,
   walletAddress: string,
