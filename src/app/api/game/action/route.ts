@@ -1,35 +1,3 @@
-/**
- * 🎯 GAME ACTION API ROUTE
- * 
- * Handles all game actions: hit, stand, double_down, insurance, surrender, set_ace_value
- * 
- * 🔑 CRITICAL PAYOUT LOGIC (prevents double-deduction bug):
- * 
- * 1. Bet is ALREADY DEDUCTED in /game/play route when game starts
- * 2. This route ONLY RETURNS money to user (never deducts)
- * 3. Uses INCREMENT operation (never decrement) for balance updates
- * 4. balanceChange is ALWAYS >= 0 (enforced by safeguard)
- * 
- * PAYOUT MULTIPLIERS:
- * - BLACKJACK: 2.5x bet (stake + 1.5x profit)
- * - WIN:       2.0x bet (stake + 1x profit)
- * - PUSH:      1.0x bet (refund stake only)
- * - SURRENDER: 0.5x bet (return half stake)
- * - LOSE:      0.0x bet (no refund, bet already taken)
- * 
- * RESPONSE STRUCTURE:
- * {
- *   success: true,
- *   game: {
- *     result: "WIN" | "LOSE" | "PUSH" | "BLACKJACK" | "SURRENDER",
- *     netProfit: number,  // Can be negative for losses
- *     state: "ENDED" | "PLAYING"
- *   },
- *   userBalance: number,  // FINAL balance after payout
- *   timestamp: string
- * }
- */
-
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -44,7 +12,6 @@ import { cacheGetOrFetch, CACHE_STRATEGIES } from '@/lib/cache-operations'
 import { cacheInvalidation } from '@/lib/cache-invalidation'
 import { db } from '@/lib/db'
 
-// 🚀 FIRE-AND-FORGET: Update session stats without blocking response
 function updateSessionStatsAction(db: any, sessionId: string, gameResult: any, betAmount: number, netProfit: number) {
   db.gameSession.findUnique({ where: { id: sessionId } })
     .then((session: any) => {
@@ -84,16 +51,13 @@ export async function POST(request: NextRequest) {
   try {
     const isDevelopment = process.env.NODE_ENV === 'development'
     
-    // Production safeguards
     if (!isDevelopment) {
-      // CORS check
       const cors = corsMiddleware(request)
       if (cors instanceof NextResponse) return cors
       if (!cors.isAllowedOrigin) {
         return NextResponse.json({ error: 'CORS policy violation' }, { status: 403, headers: cors.headers })
       }
 
-      // Rate limiting
       const rateLimit = await rateLimitMiddleware(request, 'game')
       if (!rateLimit.success) {
         return NextResponse.json(
@@ -102,7 +66,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Authentication
       const authHeader = request.headers.get('authorization')
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: { ...cors.headers, ...getSecurityHeaders() } })
@@ -116,22 +79,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Parse and sanitize request
     const body = await request.json()
     const { gameId, action, userId, payload } = isDevelopment ? body : sanitizeSqlInput(body)
 
-    // Validate required fields
     if (!gameId || !action || !userId) {
       return NextResponse.json({ error: 'Missing required fields: gameId, action, userId' }, { status: 400 })
     }
 
-    // Validate action (NO SPLIT - cleaner codebase)
     const validActions = ['hit', 'stand', 'double_down', 'insurance', 'surrender', 'set_ace_value']
     if (!validActions.includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Available: hit, stand, double_down, insurance, surrender, set_ace_value' }, { status: 400 })
     }
 
-    // 🚀 CACHED + PARALLEL: Get game and user simultaneously
     const [game, user] = await executeParallel(
       cacheGetOrFetch(
         CACHE_STRATEGIES.GAME_STATE(gameId).key,
@@ -289,18 +248,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error instanceof Error ? error.message : 'Action failed' }, { status: 400 })
     }
 
-    // Calculate final hands
     const newPlayerHand = GameEngine.calculateHandValue(playerCards)
     const newDealerHand = GameEngine.calculateHandValue(dealerCards)
 
-    // Determine if game should settle
     const shouldSettle =
       updatedGame.hasSurrendered ||
       action === 'stand' ||
       action === 'double_down' ||
       newPlayerHand.isBust
 
-    // Settlement logic
     if (shouldSettle) {
       finalGameState = 'ENDED'
 
@@ -322,85 +278,52 @@ export async function POST(request: NextRequest) {
         result = 'PUSH'
       }
 
-      // 💰 SMART PAYOUT CALCULATION (PREVENTS DOUBLE-DEDUCTION)
-      // CRITICAL: Bet was ALREADY deducted in /game/play route
-      // This settlement logic ONLY returns money to user (never deducts)
-      // We use MULTIPLIERS to calculate how much to return
-
-      // 1. Clean and normalize result string
       const rawResult = result || 'LOSE'
       const cleanResult = rawResult.toUpperCase().trim()
 
-      console.log(`🔍 RESULT CHECK: Raw='${rawResult}' | Clean='${cleanResult}'`)
-
-      // 2. Ensure bet is a valid number (prevent Prisma Decimal errors)
       const betValue = Number(updatedGame.currentBet ?? game.currentBet) || 0
       betAmount = betValue
 
       let multiplier = 0
 
-      // --- PAYOUT MULTIPLIER LOGIC ---
-      // BLACKJACK: Return 2.5x bet (original stake + 1.5x profit)
       if (cleanResult.includes('BLACKJACK')) {
         multiplier = 2.5
-      }
-      // WIN: Return 2.0x bet (original stake + 1x profit)
-      else if (cleanResult === 'WIN' || cleanResult.includes('WIN')) {
+      } else if (cleanResult === 'WIN' || cleanResult.includes('WIN')) {
         multiplier = 2.0
-      }
-      // PUSH/DRAW/TIE: Return 1.0x bet (refund original stake only)
-      else if (
+      } else if (
         cleanResult === 'PUSH' ||
         cleanResult === 'DRAW' ||
         cleanResult === 'TIE' ||
         cleanResult.includes('PUSH')
       ) {
         multiplier = 1.0
-      }
-      // SURRENDER: Return 0.5x bet (return half of stake)
-      else if (cleanResult === 'SURRENDER' || cleanResult.includes('SURRENDER')) {
+      } else if (cleanResult === 'SURRENDER' || cleanResult.includes('SURRENDER')) {
         multiplier = 0.5
-      }
-      // LOSE: Return 0.0x bet (bet already taken, no refund)
-      // ⚠️ CRITICAL: We do NOT deduct again here!
-      else {
+      } else {
         multiplier = 0.0
       }
 
-      // Calculate payout amount (what user receives back)
       payout = Math.floor(betValue * multiplier)
-      
-      // Calculate balance change (ALWAYS >= 0, we only ADD back money)
       balanceChange = payout
       
-      // Safeguard: Ensure balanceChange is never negative
       if (balanceChange < 0) {
-        console.warn(`⚠️ CRITICAL: balanceChange was negative (${balanceChange}), forcing to 0`)
         balanceChange = 0
       }
 
-      console.log(`💰 PAYOUT FINAL: Result=${cleanResult}, Bet=${betValue}, Multiplier=${multiplier}, PayoutAmount=${payout}, BalanceChange=${balanceChange}`)
-
-      // NaN protection
       if (!Number.isFinite(payout) || Number.isNaN(payout)) {
-        console.warn('⚠️ CRITICAL: payout was NaN or Infinity, forcing to 0')
         payout = 0
         balanceChange = 0
       }
 
-      // Calculate net profit (profit = payout - original bet)
       netProfit = payout - betValue
       if (!Number.isFinite(netProfit) || Number.isNaN(netProfit)) {
-        console.warn('⚠️ CRITICAL: netProfit was NaN or Infinity, forcing to 0')
         netProfit = 0
       }
     }
 
     const isSettlement = finalGameState === 'ENDED'
 
-    // --- ATOMIC DATABASE UPDATE ---
     const [updatedGameRecord, updatedUser] = await db.$transaction([
-      // Update game state
       db.game.update({
         where: { id: gameId },
         data: {
@@ -422,12 +345,6 @@ export async function POST(request: NextRequest) {
             : {}),
         },
       }),
-      // ✅ CRITICAL: Update user balance on settlement
-      // IMPORTANT: We use INCREMENT (never decrement) because:
-      // 1. Bet was already deducted in /game/play route
-      // 2. balanceChange is ALWAYS >= 0 (enforced by safeguard above)
-      // 3. We only RETURN money to user (payout = multiplier * bet)
-      // 4. This prevents double-deduction bug
       isSettlement
         ? db.user.update({
             where: { id: userId },
@@ -450,25 +367,23 @@ export async function POST(request: NextRequest) {
       await cacheInvalidation.invalidateGameData(gameId, userId, 'game_action')
     }
 
-    // --- 1. Mapping Action Dulu ---
     let dbMoveType = action.toUpperCase();
 
     if (action === 'insurance') {
-      dbMoveType = 'INSURANCE_ACCEPT'; // Match schema enum
+      dbMoveType = 'INSURANCE_ACCEPT';
     }
     if (action === 'set_ace_value') {
-      dbMoveType = 'HIT'; // Fallback mapping
+      dbMoveType = 'HIT';
     }
 
-    // --- 2. Simpan ke Database ---
     db.gameMove.create({
       data: {
         gameId,
-        moveType: dbMoveType as any, // ✅ FIX: 'as any' bypasses TypeScript enum check
+        moveType: dbMoveType as any,
         payload: {
-          originalAction: action, // Preserve original for audit trail
+          originalAction: action,
           playerCards,
-          dealerCards: isSettlement ? dealerCards : [dealerCards[0]], // Hide dealer's hole card
+          dealerCards: isSettlement ? dealerCards : [dealerCards[0]],
           playerHandValue: newPlayerHand.value,
           dealerHandValue: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           currentBet: updatedGame.currentBet,
@@ -477,7 +392,6 @@ export async function POST(request: NextRequest) {
       }
     }).catch(err => console.error('GameMove creation failed:', err))
 
-    // 🚀 FIRE-AND-FORGET: Transaction history (only on settlement)
     if (isSettlement) {
       db.transaction.create({
         data: {
@@ -492,13 +406,11 @@ export async function POST(request: NextRequest) {
         }
       }).catch(err => console.error('Transaction creation failed:', err))
 
-      // 🚀 FIRE-AND-FORGET: Session stats update
       if (game.sessionId) {
         updateSessionStatsAction(db, game.sessionId, { result: result || 'LOSE' }, betAmount, netProfit)
       }
     }
 
-    // Return comprehensive response
     return NextResponse.json({
       success: true,
       game: {
@@ -512,7 +424,7 @@ export async function POST(request: NextRequest) {
           cards: newPlayerHand.cards
         },
         dealerHand: {
-          cards: isSettlement ? newDealerHand.cards : [dealerCards[0]], // Hide second card if ongoing
+          cards: isSettlement ? newDealerHand.cards : [dealerCards[0]],
           value: isSettlement ? newDealerHand.value : GameEngine.calculateHandValue([dealerCards[0]]).value,
           isBust: newDealerHand.isBust,
           isBlackjack: newDealerHand.isBlackjack

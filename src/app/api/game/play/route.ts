@@ -17,38 +17,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing data' }, { status: 400 })
     }
 
-    // 🔥 ATOMIC TRANSACTION WITH DATABASE LOCK
-    // Semua operasi dalam blok ini adalah "satu kesatuan"
     const result = await db.$transaction(async (tx) => {
-      
-      // ---------------------------------------------------------
-      // 🔒 STEP 1: LOCK USER & DEDUCT BALANCE IMMEDIATELY
-      // ---------------------------------------------------------
-      // Dengan melakukan update di awal, request lain akan MENUNGGU
-      // sampai transaksi ini selesai. Ini adalah database-level locking.
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new Error("User not found");
       if (user.balance < betAmount) throw new Error("Insufficient balance");
 
-      // CRITICAL: Deduct balance FIRST
-      // This locks the user row in database
       await tx.user.update({
         where: { id: userId },
         data: { balance: { decrement: betAmount } }
       });
-
-      console.log(`[PLAY_LOCK] User ${userId}: Balance locked, bet ${betAmount} deducted`);
-
-      // ---------------------------------------------------------
-      // 🛡️ STEP 2: CHECK GAME ACTIVE & TIME GATE (Now Safe)
-      // ---------------------------------------------------------
       
       const existingGame = await tx.game.findFirst({
         where: { playerId: userId, state: "PLAYING" }
       });
 
       if (existingGame) {
-        // If error, transaction rolls back and balance is automatically refunded
         throw new Error("GAME_ALREADY_ACTIVE");
       }
 
@@ -64,9 +47,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ---------------------------------------------------------
-      // 🃏 STEP 3: GAME LOGIC
-      // ---------------------------------------------------------
       const deck = GameEngine.createDeck()
       const playerCards = [deck.pop()!, deck.pop()!]
       const dealerCards = [deck.pop()!, deck.pop()!]
@@ -80,11 +60,10 @@ export async function POST(request: NextRequest) {
       let payout = 0
       let netProfit = 0
 
-      // Handle Instant Blackjack Cases
       if (playerHand.isBlackjack && fullDealerHand.isBlackjack) {
         gameState = 'ENDED'
         result = 'PUSH'
-        payout = betAmount // Return stake only
+        payout = betAmount
         netProfit = 0
       } else if (fullDealerHand.isBlackjack && !playerHand.isBlackjack) {
         gameState = 'ENDED'
@@ -94,28 +73,17 @@ export async function POST(request: NextRequest) {
       } else if (playerHand.isBlackjack && !fullDealerHand.isBlackjack) {
         gameState = 'ENDED'
         result = 'WIN'
-        // Player blackjack pays 2.5x (stake + 1.5x profit)
         netProfit = Math.floor(betAmount * 1.5) 
         payout = betAmount + netProfit 
       }
 
-      // ---------------------------------------------------------
-      // 💰 STEP 4: IMMEDIATE SETTLEMENT IF GAME ENDED
-      // ---------------------------------------------------------
       if (gameState === 'ENDED' && payout > 0) {
-        // Balance already deducted in STEP 1
-        // Now add back the payout (stake + profit)
         await tx.user.update({
           where: { id: userId },
           data: { balance: { increment: payout } }
         });
-
-        console.log(`[PLAY_SETTLE] Game ID: (new), Result: ${result}, Payout: ${payout}`);
       }
 
-      // ---------------------------------------------------------
-      // 💾 STEP 5: SAVE GAME TO DATABASE
-      // ---------------------------------------------------------
       let session = await tx.gameSession.findFirst({
          where: { playerId: userId, endTime: null },
          orderBy: { startTime: 'desc' }
@@ -163,7 +131,6 @@ export async function POST(request: NextRequest) {
           }
       });
 
-      // Get final balance for response
       const finalUser = await tx.user.findUnique({ where: { id: userId } });
       
       return {
@@ -173,18 +140,16 @@ export async function POST(request: NextRequest) {
       };
 
     }, {
-      maxWait: 5000, // Wait max 5 seconds for lock
-      timeout: 10000 // Process max 10 seconds
+      maxWait: 5000,
+      timeout: 10000
     });
 
-    // 🚀 CACHE INVALIDATION (Outside Transaction)
     if (result.game.state === 'ENDED') {
         await cacheInvalidation.invalidateOnGameEnd(result.game.id, userId, result.game.result || 'ENDED')
     } else {
         await cacheInvalidation.invalidateGameData(result.game.id, userId, 'game_started')
     }
 
-    // Format response - Hide dealer hole card if game still playing
     const gameResponse = {
         ...result.game,
         dealerHand: result.game.state === 'ENDED' 
@@ -205,11 +170,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('[PLAY_ERROR]', error.message)
-
-    // Handle specific race condition errors
     if (error.message === "GAME_ALREADY_ACTIVE") {
-        console.log('[BLOCKED] Game already active - balance auto-refunded');
         return NextResponse.json({ 
             success: false, 
             message: "Selesaikan game yang sedang berjalan dulu!" 
@@ -217,7 +178,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (error.message === "TOO_FAST") {
-        console.log('[BLOCKED] Too fast request - balance auto-refunded');
         return NextResponse.json({ 
             success: false, 
             message: "Terlalu cepat! Tunggu sebentar." 
@@ -225,7 +185,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (error.message === "Insufficient balance") {
-        console.log('[BLOCKED] Insufficient balance');
         return NextResponse.json({ error: 'Saldo tidak cukup' }, { status: 400 });
     }
 
